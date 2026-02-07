@@ -94,3 +94,7 @@ backup_refactor_*/
 *.BROKEN_*
 *_OK_*
 
+
+# systemd / runtime
+*.pid
+*.sqlite3
