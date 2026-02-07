@@ -1,0 +1,20 @@
+[0;1;32m●[0m coworking-bot.service - Coworking Booking Telegram Bot
+     Loaded: loaded (]8;;file://v3038968.hosted-by-vdsina.ru/etc/systemd/system/coworking-bot.service/etc/systemd/system/coworking-bot.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Thu 2026-02-05 18:12:17 MSK; 12min ago
+   Main PID: 22362 (python)
+      Tasks: 3 (limit: 1057)
+     Memory: 93.3M (peak: 93.5M)
+        CPU: 3.351s
+     CGroup: /system.slice/coworking-bot.service
+             └─[0;38;5;245m22362 /home/coworkingbot/venv/bin/python /home/coworkingbot/working_bot_fixed.py[0m
+
+Feb 05 18:23:12 v3038968.hosted-by-vdsina.ru python[22362]: 2026-02-05 18:23:12,655 - aiogram.dispatcher - WARNING - Sleep for 5.080516 seconds and try again... (tryings = 10, bot id = 8243239133)
+Feb 05 18:23:22 v3038968.hosted-by-vdsina.ru python[22362]: 2026-02-05 18:23:22,785 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+Feb 05 18:23:22 v3038968.hosted-by-vdsina.ru python[22362]: 2026-02-05 18:23:22,786 - aiogram.dispatcher - WARNING - Sleep for 4.724366 seconds and try again... (tryings = 11, bot id = 8243239133)
+Feb 05 18:23:32 v3038968.hosted-by-vdsina.ru python[22362]: 2026-02-05 18:23:32,832 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+Feb 05 18:23:32 v3038968.hosted-by-vdsina.ru python[22362]: 2026-02-05 18:23:32,833 - aiogram.dispatcher - WARNING - Sleep for 5.088094 seconds and try again... (tryings = 12, bot id = 8243239133)
+Feb 05 18:23:43 v3038968.hosted-by-vdsina.ru python[22362]: 2026-02-05 18:23:43,037 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+Feb 05 18:23:43 v3038968.hosted-by-vdsina.ru python[22362]: 2026-02-05 18:23:43,037 - aiogram.dispatcher - WARNING - Sleep for 5.157931 seconds and try again... (tryings = 13, bot id = 8243239133)
+Feb 05 18:23:53 v3038968.hosted-by-vdsina.ru python[22362]: 2026-02-05 18:23:53,142 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+Feb 05 18:23:53 v3038968.hosted-by-vdsina.ru python[22362]: 2026-02-05 18:23:53,143 - aiogram.dispatcher - WARNING - Sleep for 5.045394 seconds and try again... (tryings = 14, bot id = 8243239133)
+Feb 05 18:24:08 v3038968.hosted-by-vdsina.ru python[22362]: 2026-02-05 18:24:08,244 - aiogram.dispatcher - INFO - Connection established (tryings = 15, bot id = 8243239133)

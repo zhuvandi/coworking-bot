@@ -1,0 +1,28 @@
+# secrets
+.env
+.env.*
+*.key
+*.pem
+
+# ssh + user dotfiles
+.ssh/
+.bashrc
+.profile
+.bash_logout
+.gitconfig
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.venv/
+venv/
+.envrc
+.pytest_cache/
+.mypy_cache/
+
+# system / editor
+.DS_Store
+.vscode/
