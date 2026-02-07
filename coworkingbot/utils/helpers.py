@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, date
-from typing import Iterable, Set
+from datetime import date, datetime
 
 from coworkingbot.config import ADMIN_IDS
 
 
-def _parse_admin_ids(value) -> Set[int]:
+def _parse_admin_ids(value) -> set[int]:
     """
     ADMIN_IDS может быть:
       - list[int]

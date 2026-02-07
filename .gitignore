@@ -98,3 +98,8 @@ backup_refactor_*/
 # systemd / runtime
 *.pid
 *.sqlite3
+
+# local noise
+.lesshst
+Makefile.bak.*
+venv.BAK*/

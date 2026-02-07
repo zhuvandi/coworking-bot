@@ -1,4 +1,5 @@
 import os
+
 import aiohttp
 from dotenv import load_dotenv
 
@@ -6,6 +7,7 @@ load_dotenv("/home/coworkingbot/.env")
 
 GAS_WEBAPP_URL = os.getenv("GAS_WEBAPP_URL", "").strip()
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
+
 
 async def call_google_script(payload: dict, timeout: int = 30) -> dict:
     if not GAS_WEBAPP_URL:
