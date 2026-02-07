@@ -71,3 +71,12 @@ backup_refactor_*/
 *.bak_*
 *.BROKEN_*
 working_bot_FIXED_OK_*
+
+# backups / local junk
+backup_*/
+backup_refactor_*/
+app_v2/
+*.bak_*
+*.BROKEN_*
+working_bot_FIXED_OK_*.py
+
