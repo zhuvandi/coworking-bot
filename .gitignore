@@ -26,3 +26,21 @@ venv/
 # system / editor
 .DS_Store
 .vscode/
+
+# caches / local env
+.cache/
+venv/
+__pycache__/
+
+# backups / local copies
+backup_*/
+backup_refactor_*/
+*.bak
+*.bak_*
+*.BROKEN_*
+*FIXED_OK*
+
+# local caches (must not be committed)
+.cache/
+__pycache__/
+venv/
