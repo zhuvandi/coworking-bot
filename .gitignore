@@ -61,3 +61,13 @@ backup_refactor_*/
 
 # ops artifacts (optional)
 *.pid
+
+# runtime/cache
+.cache/
+__pycache__/
+venv/
+backup_*/
+backup_refactor_*/
+*.bak_*
+*.BROKEN_*
+working_bot_FIXED_OK_*
