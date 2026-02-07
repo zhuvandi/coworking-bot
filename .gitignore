@@ -80,3 +80,17 @@ app_v2/
 *.BROKEN_*
 working_bot_FIXED_OK_*.py
 
+
+# local caches / virtualenv
+.cache/
+venv/
+__pycache__/
+*.pyc
+
+# local backups (must never go to git)
+backup_*/
+backup_refactor_*/
+*.bak_*
+*.BROKEN_*
+*_OK_*
+
