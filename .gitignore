@@ -44,3 +44,20 @@ backup_refactor_*/
 .cache/
 __pycache__/
 venv/
+
+# caches / env
+.cache/
+venv/
+__pycache__/
+*.swp
+*.swo
+
+# backups / dumps
+backup_*/
+backup_refactor_*/
+*.bak_*
+*BROKEN*
+*FIXED_OK*
+
+# ops artifacts (optional)
+*.pid
