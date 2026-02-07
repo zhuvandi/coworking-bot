@@ -1,16 +1,18 @@
+
 from aiogram import types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
-from config import ADMIN_IDS
-from utils.gas import call_google_script
-from utils.helpers import (
+from coworkingbot.config import ADMIN_IDS
+from coworkingbot.utils.gas import call_google_script
+
+from coworkingbot.utils.helpers import (
     is_admin,
     is_past_booking
 )
 
-from keyboards.main import main_menu_keyboard
-from bot import bot
+from coworkingbot.keyboards.main import main_menu_keyboard
+from coworkingbot.bot import bot
 
 
 async def cmd_start(message: types.Message, state: FSMContext):
@@ -39,3 +41,4 @@ async def cmd_myid(message: types.Message):
         f"👤 Ваш ID: <code>{message.from_user.id}</code>",
         parse_mode="HTML"
     )
+
