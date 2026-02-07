@@ -28,14 +28,10 @@ test:
 	$(PY) -m pytest -q
 
 lint:
-	1000 1000PY) -m ruff check coworkingbot tests
-
-
+	$(PY) -m ruff check coworkingbot tests
 
 format:
-	1000 1000PY) -m ruff format coworkingbot tests
-
-
+	$(PY) -m ruff format coworkingbot tests
 
 ci: lint test
 
