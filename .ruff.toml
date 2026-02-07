@@ -1,12 +1,26 @@
 target-version = "py312"
 line-length = 100
 
-select = ["E", "F", "I"]
-ignore = ["E501"]
+# ВАЖНО: проверяем только наш код, не весь мусор/venv/бэкапы
+src = ["coworkingbot", "tests"]
 
 exclude = [
+  ".git",
+  ".pytest_cache",
+  "__pycache__",
   "venv",
   ".venv",
-  "__pycache__",
+  "venv.BAK*",
+  ".cache",
   "backup_*",
+  "backup_refactor_*",
+  "working_bot_fixed_clean.py",
+  "working_bot_FIXED_OK_*.py",
+  "working_bot_fixed.py.bak_*",
+  "working_bot_fixed.py.BROKEN_*",
 ]
+
+[lint]
+# базовый разумный набор, без фанатизма
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E501"]  # длину строк не душим
