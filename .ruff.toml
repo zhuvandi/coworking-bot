@@ -24,3 +24,6 @@ exclude = [
 # базовый разумный набор, без фанатизма
 select = ["E", "F", "I", "W", "UP", "B"]
 ignore = ["E501"]  # длину строк не душим
+
+[lint.per-file-ignores]
+"coworkingbot/working_bot_fixed.py" = ["E722", "F811"]
