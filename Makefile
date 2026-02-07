@@ -1,39 +1,40 @@
 SHELL := /bin/bash
+.RECIPEPREFIX := >
 PY := venv/bin/python
 PIP := $(PY) -m pip
 
 .PHONY: help pip install install-dev test lint format ci run
 
 help:
-	@echo "Targets:"
-	@echo "  make pip         - upgrade pip/setuptools/wheel (safe)"
-	@echo "  make install     - install runtime deps"
-	@echo "  make install-dev - install dev deps"
-	@echo "  make test        - run pytest"
-	@echo "  make lint        - run ruff check"
-	@echo "  make format      - run ruff format"
-	@echo "  make ci          - lint + test"
-	@echo "  make run         - run bot module (like systemd)"
+>echo "Targets:"
+>echo "  make pip         - upgrade pip/setuptools/wheel (safe)"
+>echo "  make install     - install runtime deps"
+>echo "  make install-dev - install dev deps"
+>echo "  make test        - run pytest"
+>echo "  make lint        - run ruff check (only project code)"
+>echo "  make format      - run ruff format (only project code)"
+>echo "  make ci          - lint + test"
+>echo "  make run         - run bot module (like systemd)"
 
 pip:
-	$(PIP) install -U pip setuptools wheel
+>$(PIP) install -U pip setuptools wheel
 
 install:
-	$(PIP) install -r requirements.txt
+>$(PIP) install -r requirements.txt
 
 install-dev:
-	$(PIP) install -r requirements-dev.txt
+>$(PIP) install -r requirements-dev.txt
 
 test:
-	$(PY) -m pytest -q
+>$(PY) -m pytest -q
 
 lint:
-	$(PY) -m ruff check coworkingbot tests
+>$(PY) -m ruff check coworkingbot tests
 
 format:
-	$(PY) -m ruff format coworkingbot tests
+>$(PY) -m ruff format coworkingbot tests
 
 ci: lint test
 
 run:
-	$(PY) -m coworkingbot.working_bot_fixed
+>$(PY) -m coworkingbot.working_bot_fixed
