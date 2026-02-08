@@ -148,7 +148,7 @@ smoke() {
     ok "coworking-bot.service is active"
   else
     err "coworking-bot.service is not active"
-    journalctl -u coworking-bot.service -n 120 --no-pager
+    journalctl -u coworking-bot.service -n 80 --no-pager
   fi
 
   return "$STATUS"

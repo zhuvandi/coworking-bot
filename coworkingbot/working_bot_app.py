@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 
 ENV_FILE_HINT = "/etc/default/coworking-bot"
 LOCAL_ENV_HINT = ".env"
+FALLBACK_ENV_PATH = "/home/coworkingbot/.env"
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +44,36 @@ def _split_admin_ids(raw: str) -> list[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
-def load_settings() -> Settings:
+def _load_env_with_fallback() -> None:
     load_dotenv()
+
+
+def _warn_fallback_used() -> None:
+    logger.warning(
+        "Loaded fallback env from %s because required settings were missing. "
+        "Prefer systemd EnvironmentFile at %s.",
+        FALLBACK_ENV_PATH,
+        ENV_FILE_HINT,
+    )
+
+
+def load_settings() -> Settings:
+    _load_env_with_fallback()
     bot_token = os.getenv("BOT_TOKEN", "").strip()
     gas_webapp_url = os.getenv("GAS_WEBAPP_URL", "").strip()
     api_token = os.getenv("API_TOKEN", "").strip()
     admin_ids = _split_admin_ids(os.getenv("ADMIN_IDS", "").strip())
     tz_name = os.getenv("TZ", "Europe/Moscow").strip()
+
+    missing_any = not bot_token or not api_token
+    if missing_any and os.path.exists(FALLBACK_ENV_PATH):
+        if load_dotenv(FALLBACK_ENV_PATH, override=False):
+            _warn_fallback_used()
+        bot_token = os.getenv("BOT_TOKEN", "").strip()
+        gas_webapp_url = os.getenv("GAS_WEBAPP_URL", "").strip()
+        api_token = os.getenv("API_TOKEN", "").strip()
+        admin_ids = _split_admin_ids(os.getenv("ADMIN_IDS", "").strip())
+        tz_name = os.getenv("TZ", "Europe/Moscow").strip()
     return Settings(
         bot_token=bot_token,
         gas_webapp_url=gas_webapp_url,
@@ -63,11 +87,14 @@ def load_settings() -> Settings:
 def _log_missing_settings(missing: list[str]) -> None:
     missing_list = ", ".join(missing)
     logger.error(
-        "Missing required settings: %s. Set them in %s (systemd EnvironmentFile) or %s.",
+        "Missing required settings: %s. Set them in %s (systemd EnvironmentFile).",
         missing_list,
         ENV_FILE_HINT,
-        LOCAL_ENV_HINT,
     )
+
+
+def _is_bot_token_valid(token: str) -> bool:
+    return ":" in token and len(token) > 10
 
 
 # ========== УВЕДОМЛЕНИЯ АДМИНАМ ==========
@@ -2474,6 +2501,8 @@ def run() -> None:
     missing = []
     if not settings.bot_token:
         missing.append("BOT_TOKEN")
+    elif not _is_bot_token_valid(settings.bot_token):
+        missing.append("BOT_TOKEN (invalid)")
     if not settings.gas_webapp_url:
         missing.append("GAS_WEBAPP_URL")
     if not settings.api_token:
