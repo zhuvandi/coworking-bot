@@ -14,7 +14,7 @@ async def send_main_menu(message: types.Message, state: FSMContext | None = None
         await state.clear()
     await message.answer(
         "👋 Добро пожаловать в бот бронирования коворкинга!\n"
-        "Минимальное время аренды - 1 час. Слоты по 2 часа.\n\n"
+        "Слоты по 2 часа.\n\n"
         "Выберите действие:",
         reply_markup=main_menu_keyboard(),
     )
@@ -29,3 +29,8 @@ async def cmd_start(message: types.Message, state: FSMContext) -> None:
 async def handle_main_menu(callback: types.CallbackQuery, state: FSMContext) -> None:
     await send_main_menu(callback.message, state)
     await callback.answer()
+
+
+@router.message(F.text == "🏠 В меню")
+async def handle_menu_button(message: types.Message, state: FSMContext) -> None:
+    await send_main_menu(message, state)
