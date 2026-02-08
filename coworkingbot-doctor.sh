@@ -4,6 +4,7 @@ set -u
 
 VENV_PY="/home/coworkingbot/venv/bin/python"
 
+MAIN_MODULE="coworkingbot.working_bot_fixed"
 MAIN_PY="/home/coworkingbot/coworkingbot/working_bot_fixed.py"
 BASE_DIR="/home/coworkingbot"
 ENV_FILE="/etc/default/coworking-bot"
@@ -86,11 +87,16 @@ py_import_check_systemd() {
     fi
   fi
 
-  if PYTHONPATH="/home/coworkingbot" "$VENV_PY" - <<'PY'
+  if systemd-run --quiet --wait --pipe --collect \
+    --property=WorkingDirectory="$BASE_DIR" \
+    --property=EnvironmentFile="$ENV_FILE" \
+    --property=Environment="PYTHONPATH=$BASE_DIR" \
+    "$VENV_PY" - <<'PY'
 import importlib
 modules = [
     "coworkingbot.config",
-    "coworkingbot.handlers",
+    "coworkingbot.working_bot_fixed",
+    "coworkingbot.working_bot_app",
     "coworkingbot.utils",
     "coworkingbot.utils.gas",
 ]
@@ -101,12 +107,35 @@ PY
   then
     ok "systemd import check"
   else
-    err "systemd import check failed"
+    err "systemd import check failed (systemd-run)"
   fi
 }
 
+print_import_command() {
+  cat <<EOF
+systemd-run --quiet --wait --pipe --collect \\
+  --property=WorkingDirectory=$BASE_DIR \\
+  --property=EnvironmentFile=$ENV_FILE \\
+  --property=Environment=PYTHONPATH=$BASE_DIR \\
+  $VENV_PY - <<'PY'
+import importlib
+modules = [
+    "coworkingbot.config",
+    "coworkingbot.working_bot_fixed",
+    "coworkingbot.working_bot_app",
+    "coworkingbot.utils",
+    "coworkingbot.utils.gas",
+]
+for name in modules:
+    importlib.import_module(name)
+print("imports ok")
+PY
+EOF
+}
+
 smoke() {
-  check_exists "$MAIN_PY" "Main module"
+  check_exists "$MAIN_PY" "Entrypoint module file"
+  check_exists "$BASE_DIR/coworkingbot/working_bot_app.py" "Bot app module file"
   check_exists "$BASE_DIR/coworkingbot/config.py" "coworkingbot/config.py"
   check_exists "$BASE_DIR/coworkingbot/handlers" "coworkingbot/handlers"
   check_exists "$BASE_DIR/coworkingbot/utils" "coworkingbot/utils"
@@ -130,8 +159,12 @@ case "${1:-}" in
     smoke
     exit "$STATUS"
     ;;
+  --print-import-command)
+    print_import_command
+    exit 0
+    ;;
   *)
-    echo "Usage: $0 --smoke"
+    echo "Usage: $0 --smoke | --print-import-command"
     exit 1
     ;;
 esac

@@ -46,7 +46,7 @@ smoke:
 >./coworkingbot-doctor.sh --smoke
 
 doctor:
->@echo "Usage: ./coworkingbot-doctor.sh --smoke"
+>@echo "Usage: ./coworkingbot-doctor.sh --smoke | --print-import-command"
 
 deploy:
 >./scripts/deploy.sh
