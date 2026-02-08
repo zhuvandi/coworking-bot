@@ -51,20 +51,30 @@ py_import_check_systemd() {
 
   echo "$unit_output"
 
-  if echo "$unit_output" | rg -q "override.conf"; then
+  if echo "$unit_output" | grep -q "override.conf"; then
     ok "systemd override.conf detected in unit output"
   fi
 
-  if echo "$unit_output" | rg -q "^WorkingDirectory=/home/coworkingbot"; then
+  if echo "$unit_output" | grep -q "^WorkingDirectory=/home/coworkingbot"; then
     ok "WorkingDirectory is /home/coworkingbot"
   else
     err "WorkingDirectory is not /home/coworkingbot"
   fi
 
-  if echo "$unit_output" | rg -q "PYTHONPATH=/home/coworkingbot"; then
+  if echo "$unit_output" | grep -q "PYTHONPATH=/home/coworkingbot"; then
     ok "PYTHONPATH is /home/coworkingbot"
   else
     err "PYTHONPATH is not /home/coworkingbot"
+  fi
+
+  if echo "$unit_output" | grep -qE "^ExecStart=.*-m[[:space:]]+coworkingbot\\.working_bot_fixed\\b"; then
+    ok "ExecStart runs coworkingbot.working_bot_fixed"
+  else
+    if echo "$unit_output" | grep -qE "^ExecStart=$"; then
+      err "ExecStart reset found but no coworkingbot.working_bot_fixed override"
+    else
+      err "ExecStart does not run coworkingbot.working_bot_fixed"
+    fi
   fi
 
   if PYTHONPATH="/home/coworkingbot" "$VENV_PY" - <<'PY'
