@@ -1,6 +1,9 @@
 # secrets
 .env
 .env.*
+*.env
+coworkingbot.env
+coworkingbot.env.*
 *.key
 *.pem
 

@@ -1,0 +1,6 @@
+[Service]
+EnvironmentFile=/etc/coworkingbot.env
+WorkingDirectory=/home/coworkingbot
+Environment=PYTHONPATH=/home/coworkingbot
+ExecStart=
+ExecStart=/home/coworkingbot/venv/bin/python -m coworkingbot.working_bot_fixed

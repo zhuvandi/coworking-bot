@@ -6,6 +6,7 @@ VENV_PY="/home/coworkingbot/venv/bin/python"
 
 MAIN_PY="/home/coworkingbot/coworkingbot/working_bot_fixed.py"
 BASE_DIR="/home/coworkingbot"
+ENV_FILE="/etc/coworkingbot.env"
 STATUS=0
 
 ok() {
@@ -53,6 +54,8 @@ py_import_check_systemd() {
 
   if echo "$unit_output" | grep -q "override.conf"; then
     ok "systemd override.conf detected in unit output"
+  else
+    err "systemd override.conf not detected in unit output"
   fi
 
   if echo "$unit_output" | grep -q "^WorkingDirectory=/home/coworkingbot"; then
@@ -65,6 +68,22 @@ py_import_check_systemd() {
     ok "PYTHONPATH is /home/coworkingbot"
   else
     err "PYTHONPATH is not /home/coworkingbot"
+  fi
+
+  if echo "$unit_output" | grep -q "^EnvironmentFile=/etc/coworkingbot.env"; then
+    ok "EnvironmentFile is /etc/coworkingbot.env"
+  else
+    err "EnvironmentFile is not /etc/coworkingbot.env"
+  fi
+
+  if echo "$unit_output" | grep -qE "^ExecStart=.*working_bot_fixed\\.py\\b"; then
+    err "ExecStart still references working_bot_fixed.py"
+  fi
+
+  local execstart_count
+  execstart_count=$(echo "$unit_output" | grep -E "^ExecStart=" | grep -vE "^ExecStart=$" | wc -l | tr -d ' ')
+  if [[ "$execstart_count" != "1" ]]; then
+    err "Expected exactly one ExecStart entry, found $execstart_count"
   fi
 
   if echo "$unit_output" | grep -qE "^ExecStart=.*-m[[:space:]]+coworkingbot\\.working_bot_fixed\\b"; then
@@ -101,6 +120,7 @@ smoke() {
   check_exists "$BASE_DIR/coworkingbot/config.py" "coworkingbot/config.py"
   check_exists "$BASE_DIR/coworkingbot/handlers" "coworkingbot/handlers"
   check_exists "$BASE_DIR/coworkingbot/utils" "coworkingbot/utils"
+  check_exists "$ENV_FILE" "Environment file"
 
   py_compile_check
   py_import_check_systemd
