@@ -103,3 +103,6 @@ backup_refactor_*/
 .lesshst
 Makefile.bak.*
 venv.BAK*/
+
+# local venv backups/noise
+venv.BROKEN_*/
