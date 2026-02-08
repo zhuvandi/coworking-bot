@@ -2,6 +2,8 @@
 
 set -u
 
+VENV_PY="/home/coworkingbot/venv/bin/python"
+
 MAIN_PY="/home/coworkingbot/coworkingbot/working_bot_fixed.py"
 BASE_DIR="/home/coworkingbot"
 STATUS=0
@@ -31,7 +33,7 @@ check_exists() {
 }
 
 py_compile_check() {
-  if python3 -m py_compile "$MAIN_PY"; then
+  if "$VENV_PY" -m py_compile "$MAIN_PY"; then
     ok "py_compile $MAIN_PY"
   else
     err "py_compile failed for $MAIN_PY"
@@ -65,7 +67,7 @@ py_import_check_systemd() {
     err "PYTHONPATH is not /home/coworkingbot"
   fi
 
-  if PYTHONPATH="/home/coworkingbot" python3 - <<'PY'
+  if PYTHONPATH="/home/coworkingbot" "$VENV_PY" - <<'PY'
 import importlib
 modules = [
     "coworkingbot.config",
