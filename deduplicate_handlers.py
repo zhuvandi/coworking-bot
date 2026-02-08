@@ -12,6 +12,7 @@ DUPLICATE_COMMANDS = [
     r'@dp\.message\(Command\("stats"\)\)',
 ]
 
+
 def remove_duplicates(text: str, pattern: str) -> str:
     matches = list(re.finditer(pattern, text))
     if len(matches) <= 1:
