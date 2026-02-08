@@ -1,5 +1,29 @@
 # Runbook (coworking-bot)
 
+## Обновить сервер одной командой
+
+```bash
+sudo -u coworkingbot -H bash -lc 'cd /home/coworkingbot && make deploy'
+```
+
+## Systemd конфигурация (env + override)
+
+```bash
+sudo install -m 600 /home/coworkingbot/coworkingbot.env.example /etc/default/coworking-bot
+sudo systemctl edit coworking-bot.service
+```
+
+Содержимое override (оставляем текущие WorkingDirectory и PYTHONPATH), пример есть в `systemd/coworking-bot.override.conf.example`:
+
+```ini
+[Service]
+EnvironmentFile=/etc/default/coworking-bot
+WorkingDirectory=/home/coworkingbot
+Environment=PYTHONPATH=/home/coworkingbot
+ExecStart=
+ExecStart=/home/coworkingbot/venv/bin/python -m coworkingbot.working_bot_fixed
+```
+
 ## Обновить код (git pull)
 
 ```bash

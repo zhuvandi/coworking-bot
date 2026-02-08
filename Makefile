@@ -3,7 +3,7 @@ SHELL := /bin/bash
 PY := venv/bin/python
 PIP := $(PY) -m pip
 
-.PHONY: help pip install install-dev test lint format ci run smoke doctor
+.PHONY: help pip install install-dev test lint format ci run smoke doctor deploy
 
 help:
 >echo "Targets:"
@@ -17,6 +17,7 @@ help:
 >echo "  make run         - run bot module (like systemd)"
 >echo "  make smoke       - run coworkingbot-doctor --smoke"
 >echo "  make doctor      - print coworkingbot-doctor usage"
+>echo "  make deploy      - update + restart service + smoke check"
 
 pip:
 >$(PIP) install -U pip setuptools wheel
@@ -46,3 +47,6 @@ smoke:
 
 doctor:
 >@echo "Usage: ./coworkingbot-doctor.sh --smoke"
+
+deploy:
+>./scripts/deploy.sh
