@@ -22,7 +22,7 @@ jobs:
 
       - name: Ruff
         run: |
-          ruff check .
+          ruff check coworkingbot tests
 
       - name: Pytest
         env:
