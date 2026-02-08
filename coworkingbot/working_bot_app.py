@@ -20,12 +20,7 @@ from aiogram.types import (
     KeyboardButton,
     ReplyKeyboardMarkup,
 )
-from dotenv import load_dotenv
-
-
 ENV_FILE_HINT = "/etc/default/coworking-bot"
-LOCAL_ENV_HINT = ".env"
-FALLBACK_ENV_PATH = "/home/coworkingbot/.env"
 
 logger = logging.getLogger(__name__)
 
@@ -44,36 +39,12 @@ def _split_admin_ids(raw: str) -> list[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
-def _load_env_with_fallback() -> None:
-    load_dotenv()
-
-
-def _warn_fallback_used() -> None:
-    logger.warning(
-        "Loaded fallback env from %s because required settings were missing. "
-        "Prefer systemd EnvironmentFile at %s.",
-        FALLBACK_ENV_PATH,
-        ENV_FILE_HINT,
-    )
-
-
 def load_settings() -> Settings:
-    _load_env_with_fallback()
     bot_token = os.getenv("BOT_TOKEN", "").strip()
     gas_webapp_url = os.getenv("GAS_WEBAPP_URL", "").strip()
     api_token = os.getenv("API_TOKEN", "").strip()
     admin_ids = _split_admin_ids(os.getenv("ADMIN_IDS", "").strip())
     tz_name = os.getenv("TZ", "Europe/Moscow").strip()
-
-    missing_any = not bot_token or not api_token
-    if missing_any and os.path.exists(FALLBACK_ENV_PATH):
-        if load_dotenv(FALLBACK_ENV_PATH, override=False):
-            _warn_fallback_used()
-        bot_token = os.getenv("BOT_TOKEN", "").strip()
-        gas_webapp_url = os.getenv("GAS_WEBAPP_URL", "").strip()
-        api_token = os.getenv("API_TOKEN", "").strip()
-        admin_ids = _split_admin_ids(os.getenv("ADMIN_IDS", "").strip())
-        tz_name = os.getenv("TZ", "Europe/Moscow").strip()
     return Settings(
         bot_token=bot_token,
         gas_webapp_url=gas_webapp_url,
@@ -110,7 +81,7 @@ async def send_admin_notification(text: str):
             logger.error(f"Ошибка отправки уведомления админу {admin_id}: {e}")
 
 
-# ========== КОНФИГУРАЦИЯ (из .env) ==========
+# ========== КОНФИГУРАЦИЯ (из окружения) ==========
 BOT_TOKEN = ""
 GAS_WEBAPP_URL = ""
 API_TOKEN = ""

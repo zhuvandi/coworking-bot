@@ -93,6 +93,7 @@ py_import_check_systemd() {
     --property=Environment="PYTHONPATH=$BASE_DIR" \
     "$VENV_PY" - <<'PY'
 import importlib
+import os
 modules = [
     "coworkingbot.config",
     "coworkingbot.working_bot_fixed",
@@ -103,6 +104,17 @@ modules = [
 for name in modules:
     importlib.import_module(name)
 print("imports ok")
+missing = []
+required = ["BOT_TOKEN", "GAS_WEBAPP_URL", "API_TOKEN", "ADMIN_IDS"]
+for key in required:
+    if not os.getenv(key, "").strip():
+        missing.append(key)
+if missing:
+    raise SystemExit(f"missing env: {', '.join(missing)}")
+token = os.getenv("BOT_TOKEN", "").strip()
+if token and ":" not in token:
+    raise SystemExit("BOT_TOKEN format looks invalid (missing ':')")
+print("env ok")
 PY
   then
     ok "systemd import check"
@@ -119,6 +131,7 @@ systemd-run --quiet --wait --pipe --collect \\
   --property=Environment=PYTHONPATH=$BASE_DIR \\
   $VENV_PY - <<'PY'
 import importlib
+import os
 modules = [
     "coworkingbot.config",
     "coworkingbot.working_bot_fixed",
@@ -129,6 +142,17 @@ modules = [
 for name in modules:
     importlib.import_module(name)
 print("imports ok")
+missing = []
+required = ["BOT_TOKEN", "GAS_WEBAPP_URL", "API_TOKEN", "ADMIN_IDS"]
+for key in required:
+    if not os.getenv(key, "").strip():
+        missing.append(key)
+if missing:
+    raise SystemExit(f"missing env: {', '.join(missing)}")
+token = os.getenv("BOT_TOKEN", "").strip()
+if token and ":" not in token:
+    raise SystemExit("BOT_TOKEN format looks invalid (missing ':')")
+print("env ok")
 PY
 EOF
 }
