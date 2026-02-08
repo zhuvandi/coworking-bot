@@ -106,3 +106,6 @@ venv.BAK*/
 
 # local venv backups/noise
 venv.BROKEN_*/
+
+# local configs (DO NOT COMMIT)
+/.config/
