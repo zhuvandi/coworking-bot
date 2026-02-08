@@ -94,9 +94,13 @@ py_import_check_systemd() {
     "$VENV_PY" - <<'PY'
 import importlib
 modules = [
+    "coworkingbot.app.context",
+    "coworkingbot.app.middleware",
     "coworkingbot.config",
     "coworkingbot.working_bot_fixed",
     "coworkingbot.working_bot_app",
+    "coworkingbot.routers",
+    "coworkingbot.services.gas",
     "coworkingbot.utils",
     "coworkingbot.utils.gas",
 ]
@@ -120,9 +124,13 @@ systemd-run --quiet --wait --pipe --collect \\
   $VENV_PY - <<'PY'
 import importlib
 modules = [
+    "coworkingbot.app.context",
+    "coworkingbot.app.middleware",
     "coworkingbot.config",
     "coworkingbot.working_bot_fixed",
     "coworkingbot.working_bot_app",
+    "coworkingbot.routers",
+    "coworkingbot.services.gas",
     "coworkingbot.utils",
     "coworkingbot.utils.gas",
 ]
