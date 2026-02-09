@@ -17,9 +17,7 @@ router = Router()
 async def unknown_message(message: types.Message, state: FSMContext) -> None:
     current_state = await state.get_state()
     if current_state:
-        await message.answer(
-            "Пожалуйста, завершите текущее действие или нажмите «🏠 В меню»."
-        )
+        await message.answer("Пожалуйста, завершите текущее действие или нажмите «🏠 В меню».")
     else:
         await message.answer(
             "Я не понимаю эту команду. Используйте /start для начала работы.\n"

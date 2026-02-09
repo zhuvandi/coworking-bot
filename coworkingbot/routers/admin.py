@@ -355,7 +355,9 @@ async def action_admin_confirm(
         await callback.message.edit_text(
             "❌ Неизвестное действие.",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="↩️ В админ-панель", callback_data="admin_back")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="↩️ В админ-панель", callback_data="admin_back")]
+                ]
             ),
         )
         await callback.answer()
@@ -365,14 +367,18 @@ async def action_admin_confirm(
         await callback.message.edit_text(
             "✅ Готово.",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="↩️ В админ-панель", callback_data="admin_back")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="↩️ В админ-панель", callback_data="admin_back")]
+                ]
             ),
         )
     else:
         await callback.message.edit_text(
             f"⚠️ Ошибка: {result.get('message', 'Неизвестная ошибка')}",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="↩️ В админ-панель", callback_data="admin_back")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="↩️ В админ-панель", callback_data="admin_back")]
+                ]
             ),
         )
 
@@ -407,7 +413,9 @@ async def action_admin_summary_today(callback: types.CallbackQuery, ctx: AppCont
         return
 
     result = await get_report_from_gas(ctx, "daily")
-    text = result["formatted_text"] if result.get("success") else f"❌ Ошибка: {result.get('error')}"
+    text = (
+        result["formatted_text"] if result.get("success") else f"❌ Ошибка: {result.get('error')}"
+    )
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
@@ -425,7 +433,9 @@ async def action_admin_summary_week(callback: types.CallbackQuery, ctx: AppConte
         return
 
     result = await get_report_from_gas(ctx, "weekly")
-    text = result["formatted_text"] if result.get("success") else f"❌ Ошибка: {result.get('error')}"
+    text = (
+        result["formatted_text"] if result.get("success") else f"❌ Ошибка: {result.get('error')}"
+    )
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
@@ -445,8 +455,16 @@ async def action_admin_exceptions(callback: types.CallbackQuery, ctx: AppContext
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📋 Список", callback_data="admin_exceptions_list")],
-            [InlineKeyboardButton(text="➕ Закрыть дату", callback_data="admin_exceptions_add_date")],
-            [InlineKeyboardButton(text="➕ Закрыть слот", callback_data="admin_exceptions_add_slot")],
+            [
+                InlineKeyboardButton(
+                    text="➕ Закрыть дату", callback_data="admin_exceptions_add_date"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="➕ Закрыть слот", callback_data="admin_exceptions_add_slot"
+                )
+            ],
             [InlineKeyboardButton(text="➖ Удалить", callback_data="admin_exceptions_remove")],
             [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
         ]
@@ -479,14 +497,18 @@ async def action_admin_exceptions_list(callback: types.CallbackQuery, ctx: AppCo
             text,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="↩️ Назад", callback_data="admin_exceptions")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_exceptions")]
+                ]
             ),
         )
     else:
         await callback.message.edit_text(
             f"❌ Ошибка: {result.get('message', 'Неизвестная ошибка')}",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="↩️ Назад", callback_data="admin_exceptions")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_exceptions")]
+                ]
             ),
         )
     await callback.answer()
@@ -501,9 +523,7 @@ async def action_admin_exceptions_add_date(
         return
 
     await state.set_state(AdminStates.waiting_exception_date)
-    await callback.message.answer(
-        "Введите дату в формате ДД.ММ.ГГГГ, которую нужно закрыть."
-    )
+    await callback.message.answer("Введите дату в формате ДД.ММ.ГГГГ, которую нужно закрыть.")
     await callback.answer()
 
 
@@ -620,7 +640,11 @@ async def action_admin_settings(callback: types.CallbackQuery, ctx: AppContext) 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📄 Правила", callback_data="admin_settings_rules")],
-            [InlineKeyboardButton(text="🔢 Лимит бронирований", callback_data="admin_settings_limit")],
+            [
+                InlineKeyboardButton(
+                    text="🔢 Лимит бронирований", callback_data="admin_settings_limit"
+                )
+            ],
             [InlineKeyboardButton(text="⏰ Окна времени", callback_data="admin_settings_window")],
             [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
         ]
