@@ -109,3 +109,6 @@ venv.BROKEN_*/
 
 # local configs (DO NOT COMMIT)
 /.config/
+
+# local shell history
+.bash_history
