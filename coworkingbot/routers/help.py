@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from aiogram import F, Router, types
 from aiogram.filters import Command
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 from coworkingbot.services.texts import rules_text, support_text, user_help_text
 
@@ -18,9 +19,17 @@ async def handle_help_button(message: types.Message) -> None:
     await cmd_help(message)
 
 
-@router.message(F.text == "ℹ️ Правила")
+@router.message(F.text == "📄 Условия")
 async def handle_rules(message: types.Message) -> None:
-    await message.answer(rules_text(), parse_mode="HTML")
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🛟 Поддержка")],
+            [KeyboardButton(text="🏠 В меню")],
+        ],
+        resize_keyboard=True,
+        selective=True,
+    )
+    await message.answer(rules_text(), parse_mode="HTML", reply_markup=keyboard)
 
 
 @router.message(F.text == "🛟 Поддержка")
