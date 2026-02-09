@@ -116,3 +116,7 @@ venv.BROKEN_*/
 # local backups
 coworkingbot-doctor.sh.bak.*
 .bash_history
+
+# local junk
+.bash_history
+coworkingbot-doctor.sh.bak.*
