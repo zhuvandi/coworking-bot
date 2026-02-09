@@ -42,33 +42,6 @@ py_compile_check() {
   fi
 }
 
-py_import_check_direct() {
-  # Loads /etc/default/coworking-bot into env and tries to import key modules.
-  # shellcheck disable=SC1090
-  set -a
-  source "$ENV_FILE"
-  set +a
-
-  PYTHONPATH="$BASE_DIR" "$VENV_PY" - <<'PY'
-import importlib
-
-modules = [
-    "coworkingbot.app.context",
-    "coworkingbot.app.middleware",
-    "coworkingbot.config",
-    "coworkingbot.working_bot_fixed",
-    "coworkingbot.working_bot_app",
-    "coworkingbot.routers",
-    "coworkingbot.services.gas",
-    "coworkingbot.utils",
-    "coworkingbot.utils.gas",
-]
-for name in modules:
-    importlib.import_module(name)
-print("imports ok")
-PY
-}
-
 py_import_check_systemd() {
   local unit_output
   unit_output=$(systemctl cat coworking-bot.service 2>/dev/null || true)
@@ -114,27 +87,12 @@ py_import_check_systemd() {
     fi
   fi
 
-  # IMPORTANT:
-  # When running as non-root (e.g. sudo -u coworkingbot), systemd-run may fail with:
-  #   "Failed to start transient service unit: Interactive authentication required."
-  # In that case we do a non-root fallback import check (direct python + ENV_FILE).
-  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-    if py_import_check_direct; then
-      ok "import check (direct, non-root fallback)"
-    else
-      err "import check failed (direct, non-root fallback)"
-    fi
-    return
-  fi
-
-  # Root path: systemd-run (closest to real unit conditions)
   if systemd-run --quiet --wait --pipe --collect \
     --property=WorkingDirectory="$BASE_DIR" \
     --property=EnvironmentFile="$ENV_FILE" \
     --property=Environment="PYTHONPATH=$BASE_DIR" \
     "$VENV_PY" - <<'PY'
 import importlib
-
 modules = [
     "coworkingbot.app.context",
     "coworkingbot.app.middleware",
@@ -153,12 +111,7 @@ PY
   then
     ok "systemd import check"
   else
-    warn "systemd-run import check failed. Trying direct import check as fallback."
-    if py_import_check_direct; then
-      ok "import check (fallback after systemd-run failure)"
-    else
-      err "import check failed (fallback after systemd-run failure)"
-    fi
+    err "systemd import check failed (systemd-run)"
   fi
 }
 
