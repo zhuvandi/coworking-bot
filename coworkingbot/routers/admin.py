@@ -6,8 +6,11 @@ from datetime import timedelta
 
 from aiogram import F, Router, types
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from coworkingbot import __version__
 from coworkingbot.app.context import AppContext
 from coworkingbot.services.common import is_admin, now
 from coworkingbot.services.notifications import (
@@ -21,25 +24,31 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+class AdminStates(StatesGroup):
+    waiting_exception_date = State()
+    waiting_exception_slot = State()
+    waiting_exception_remove = State()
+    waiting_setting_rules = State()
+    waiting_setting_limit = State()
+    waiting_setting_window = State()
+    waiting_user_ban = State()
+    waiting_user_unban = State()
+    confirming_action = State()
+
+
 def admin_panel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="📋 Брони на сегодня", callback_data="admin_view_today"),
-                InlineKeyboardButton(
-                    text="📅 Брони на завтра", callback_data="admin_view_tomorrow"
-                ),
+                InlineKeyboardButton(text="📊 Сводка", callback_data="admin_summary"),
+                InlineKeyboardButton(text="⛔️ Исключения", callback_data="admin_exceptions"),
             ],
             [
-                InlineKeyboardButton(text="📊 Отчеты", callback_data="report_menu"),
-                InlineKeyboardButton(text="📈 Статистика", callback_data="admin_stats"),
+                InlineKeyboardButton(text="🧩 Настройки", callback_data="admin_settings"),
+                InlineKeyboardButton(text="👤 Пользователи", callback_data="admin_users"),
             ],
             [
-                InlineKeyboardButton(text="🔄 Автоотмена", callback_data="admin_auto_cancel"),
-                InlineKeyboardButton(text="🔔 Напоминания", callback_data="admin_send_reminders"),
-            ],
-            [
-                InlineKeyboardButton(text="⭐ Отзывы (админ)", callback_data="admin_all_reviews"),
+                InlineKeyboardButton(text="🧪 Диагностика", callback_data="admin_diagnostics"),
                 InlineKeyboardButton(text="❓ Помощь", callback_data="admin_help"),
             ],
             [InlineKeyboardButton(text="🚪 Выйти", callback_data="main_menu")],
@@ -90,6 +99,55 @@ async def cmd_admin(message: types.Message, ctx: AppContext) -> None:
         parse_mode="HTML",
         reply_markup=admin_panel_keyboard(),
     )
+
+
+async def _run_self_check(ctx: AppContext) -> tuple[str, bool]:
+    from coworkingbot.app.context import validate_settings
+
+    missing = validate_settings(ctx.settings)
+    env_ok = "✅ OK" if not missing else f"❌ Отсутствуют: {', '.join(missing)}"
+
+    try:
+        import aiogram  # noqa: F401
+
+        import_ok = "✅ OK"
+    except Exception as exc:  # pragma: no cover - defensive
+        import_ok = f"❌ Ошибка импорта: {exc}"
+
+    gas_ok = "⚠️ Не проверено"
+    gas_detail = ""
+    try:
+        result = await ctx.gas.request("test_connection", {})
+        if result.get("status") == "success":
+            gas_ok = "✅ OK"
+            gas_detail = result.get("message", "")
+        else:
+            gas_ok = "❌ Ошибка"
+            gas_detail = result.get("message", "")
+    except Exception as exc:
+        gas_ok = "❌ Ошибка"
+        gas_detail = str(exc)
+
+    report = (
+        "🧪 <b>Диагностика</b>\n\n"
+        f"• Env: {env_ok}\n"
+        f"• Импорт: {import_ok}\n"
+        f"• GAS: {gas_ok} {gas_detail}\n"
+        f"• Версия: {__version__}\n"
+        f"• Время: {now(ctx).strftime('%H:%M %d.%m.%Y')}\n"
+    )
+    ok = not missing and gas_ok.startswith("✅") and import_ok.startswith("✅")
+    return report, ok
+
+
+@router.message(Command("self_check"))
+async def cmd_self_check(message: types.Message, ctx: AppContext) -> None:
+    if not is_admin(ctx, message.from_user.id):
+        await message.answer("⛔ Только для администраторов.")
+        return
+
+    report, _ = await _run_self_check(ctx)
+    await message.answer(report, parse_mode="HTML")
 
 
 @router.message(Command("confirm"))
@@ -222,15 +280,580 @@ async def cmd_test_notify(message: types.Message, ctx: AppContext) -> None:
 
 
 @router.callback_query(F.data == "admin_back")
-async def action_admin_back(callback: types.CallbackQuery, ctx: AppContext) -> None:
+async def action_admin_back(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
     if not is_admin(ctx, callback.from_user.id):
         await callback.answer("⛔ Нет доступа", show_alert=True)
         return
 
+    await state.clear()
     await callback.message.edit_text(
         "👑 <b>Админ-панель</b>\n\nВыберите действие:",
         parse_mode="HTML",
         reply_markup=admin_panel_keyboard(),
+    )
+    await callback.answer()
+
+
+def _confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Подтвердить", callback_data="admin_action_confirm"),
+                InlineKeyboardButton(text="↩️ Отмена", callback_data="admin_action_cancel"),
+            ]
+        ]
+    )
+
+
+async def _request_confirmation(
+    message: types.Message, state: FSMContext, prompt: str, action: str, payload: dict
+) -> None:
+    await state.update_data(pending_action=action, pending_payload=payload)
+    await state.set_state(AdminStates.confirming_action)
+    await message.answer(prompt, parse_mode="HTML", reply_markup=_confirm_keyboard())
+
+
+@router.callback_query(F.data == "admin_action_cancel")
+async def action_admin_cancel(callback: types.CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.message.edit_text(
+        "Действие отменено.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="↩️ В админ-панель", callback_data="admin_back")]
+            ]
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_action_confirm")
+async def action_admin_confirm(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    data = await state.get_data()
+    action = data.get("pending_action")
+    payload = data.get("pending_payload", {})
+
+    await state.clear()
+
+    if action == "add_exception_date":
+        result = await ctx.gas.request("add_exception", {"type": "date", **payload})
+    elif action == "add_exception_slot":
+        result = await ctx.gas.request("add_exception", {"type": "slot", **payload})
+    elif action == "remove_exception":
+        result = await ctx.gas.request("remove_exception", payload)
+    elif action == "update_setting":
+        result = await ctx.gas.request("update_settings", payload)
+    elif action == "ban_user":
+        result = await ctx.gas.request("ban_user", payload)
+    elif action == "unban_user":
+        result = await ctx.gas.request("unban_user", payload)
+    else:
+        await callback.message.edit_text(
+            "❌ Неизвестное действие.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="↩️ В админ-панель", callback_data="admin_back")]
+                ]
+            ),
+        )
+        await callback.answer()
+        return
+
+    if result.get("status") == "success":
+        await callback.message.edit_text(
+            "✅ Готово.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="↩️ В админ-панель", callback_data="admin_back")]
+                ]
+            ),
+        )
+    else:
+        await callback.message.edit_text(
+            f"⚠️ Ошибка: {result.get('message', 'Неизвестная ошибка')}",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="↩️ В админ-панель", callback_data="admin_back")]
+                ]
+            ),
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_summary")
+async def action_admin_summary(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Сегодня", callback_data="admin_summary_today"),
+                InlineKeyboardButton(text="Неделя", callback_data="admin_summary_week"),
+            ],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
+        ]
+    )
+    await callback.message.edit_text(
+        "📊 <b>Сводка</b>\n\nВыберите период:", parse_mode="HTML", reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_summary_today")
+async def action_admin_summary_today(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    result = await get_report_from_gas(ctx, "daily")
+    text = (
+        result["formatted_text"] if result.get("success") else f"❌ Ошибка: {result.get('error')}"
+    )
+    await callback.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="↩️ Назад", callback_data="admin_summary")]]
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_summary_week")
+async def action_admin_summary_week(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    result = await get_report_from_gas(ctx, "weekly")
+    text = (
+        result["formatted_text"] if result.get("success") else f"❌ Ошибка: {result.get('error')}"
+    )
+    await callback.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="↩️ Назад", callback_data="admin_summary")]]
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_exceptions")
+async def action_admin_exceptions(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Список", callback_data="admin_exceptions_list")],
+            [
+                InlineKeyboardButton(
+                    text="➕ Закрыть дату", callback_data="admin_exceptions_add_date"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="➕ Закрыть слот", callback_data="admin_exceptions_add_slot"
+                )
+            ],
+            [InlineKeyboardButton(text="➖ Удалить", callback_data="admin_exceptions_remove")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
+        ]
+    )
+    await callback.message.edit_text(
+        "⛔️ <b>Исключения</b>\n\nЗакрытые даты и слоты:", parse_mode="HTML", reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_exceptions_list")
+async def action_admin_exceptions_list(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    result = await ctx.gas.request("get_exceptions", {})
+    if result.get("status") == "success":
+        exceptions = result.get("exceptions", [])
+        if not exceptions:
+            text = "📭 Исключений нет."
+        else:
+            text = "⛔️ <b>Исключения</b>\n\n"
+            for item in exceptions:
+                text += (
+                    f"• <code>{item.get('id', 'N/A')}</code> "
+                    f"{item.get('date', '')} {item.get('slot', '')}\n"
+                )
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_exceptions")]
+                ]
+            ),
+        )
+    else:
+        await callback.message.edit_text(
+            f"❌ Ошибка: {result.get('message', 'Неизвестная ошибка')}",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_exceptions")]
+                ]
+            ),
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_exceptions_add_date")
+async def action_admin_exceptions_add_date(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.waiting_exception_date)
+    await callback.message.answer("Введите дату в формате ДД.ММ.ГГГГ, которую нужно закрыть.")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_exceptions_add_slot")
+async def action_admin_exceptions_add_slot(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.waiting_exception_slot)
+    await callback.message.answer(
+        "Введите слот в формате ДД.ММ.ГГГГ 10:00-12:00, который нужно закрыть."
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_exceptions_remove")
+async def action_admin_exceptions_remove(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.waiting_exception_remove)
+    await callback.message.answer("Введите ID исключения для удаления.")
+    await callback.answer()
+
+
+@router.message(AdminStates.waiting_exception_date)
+async def handle_exception_date(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
+    date_str = message.text.strip()
+    try:
+        from datetime import datetime
+
+        datetime.strptime(date_str, "%d.%m.%Y")
+    except ValueError:
+        await message.answer("❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ.")
+        return
+
+    await _request_confirmation(
+        message,
+        state,
+        f"Закрыть дату <b>{date_str}</b>?",
+        "add_exception_date",
+        {"date": date_str},
+    )
+
+
+@router.message(AdminStates.waiting_exception_slot)
+async def handle_exception_slot(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
+    text = message.text.strip()
+    parts = text.split()
+    if len(parts) != 2:
+        await message.answer("❌ Используйте формат ДД.ММ.ГГГГ 10:00-12:00.")
+        return
+
+    date_str, slot = parts
+    try:
+        from datetime import datetime
+
+        datetime.strptime(date_str, "%d.%m.%Y")
+    except ValueError:
+        await message.answer("❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ.")
+        return
+
+    await _request_confirmation(
+        message,
+        state,
+        f"Закрыть слот <b>{date_str} {slot}</b>?",
+        "add_exception_slot",
+        {"date": date_str, "slot": slot},
+    )
+
+
+@router.message(AdminStates.waiting_exception_remove)
+async def handle_exception_remove(
+    message: types.Message, state: FSMContext, ctx: AppContext
+) -> None:
+    record_id = message.text.strip()
+    if not record_id:
+        await message.answer("❌ Введите ID исключения.")
+        return
+
+    await _request_confirmation(
+        message,
+        state,
+        f"Удалить исключение <code>{record_id}</code>?",
+        "remove_exception",
+        {"id": record_id},
+    )
+
+
+@router.callback_query(F.data == "admin_settings")
+async def action_admin_settings(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    result = await ctx.gas.request("get_settings", {})
+    if result.get("status") == "success":
+        settings = result.get("settings", {})
+        text = (
+            "🧩 <b>Настройки</b>\n\n"
+            f"• Правила: {settings.get('rules_text', 'не задано')}\n"
+            f"• Лимит бронирований: {settings.get('booking_limit', 'не задано')}\n"
+            f"• Окна времени: {settings.get('time_windows', 'не задано')}\n"
+        )
+    else:
+        text = "🧩 <b>Настройки</b>\n\n⚠️ Не удалось загрузить настройки."
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📄 Правила", callback_data="admin_settings_rules")],
+            [
+                InlineKeyboardButton(
+                    text="🔢 Лимит бронирований", callback_data="admin_settings_limit"
+                )
+            ],
+            [InlineKeyboardButton(text="⏰ Окна времени", callback_data="admin_settings_window")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
+        ]
+    )
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_settings_rules")
+async def action_admin_settings_rules(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.waiting_setting_rules)
+    await callback.message.answer("Введите новый текст правил.")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_settings_limit")
+async def action_admin_settings_limit(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.waiting_setting_limit)
+    await callback.message.answer("Введите новый лимит бронирований (число).")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_settings_window")
+async def action_admin_settings_window(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.waiting_setting_window)
+    await callback.message.answer("Введите новые окна времени (например: 10:00-22:00).")
+    await callback.answer()
+
+
+@router.message(AdminStates.waiting_setting_rules)
+async def handle_settings_rules(message: types.Message, state: FSMContext) -> None:
+    rules = message.text.strip()
+    if not rules:
+        await message.answer("❌ Текст правил не может быть пустым.")
+        return
+    await _request_confirmation(
+        message,
+        state,
+        "Сохранить новый текст правил?",
+        "update_setting",
+        {"rules_text": rules},
+    )
+
+
+@router.message(AdminStates.waiting_setting_limit)
+async def handle_settings_limit(message: types.Message, state: FSMContext) -> None:
+    value = message.text.strip()
+    if not value.isdigit():
+        await message.answer("❌ Введите число.")
+        return
+    await _request_confirmation(
+        message,
+        state,
+        f"Сохранить лимит {value}?",
+        "update_setting",
+        {"booking_limit": int(value)},
+    )
+
+
+@router.message(AdminStates.waiting_setting_window)
+async def handle_settings_window(message: types.Message, state: FSMContext) -> None:
+    value = message.text.strip()
+    if not value:
+        await message.answer("❌ Окна времени не могут быть пустыми.")
+        return
+    await _request_confirmation(
+        message,
+        state,
+        f"Сохранить окна времени <b>{value}</b>?",
+        "update_setting",
+        {"time_windows": value},
+    )
+
+
+@router.callback_query(F.data == "admin_users")
+async def action_admin_users(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Список банов", callback_data="admin_users_list")],
+            [InlineKeyboardButton(text="🚫 Забанить", callback_data="admin_users_ban")],
+            [InlineKeyboardButton(text="♻️ Разбанить", callback_data="admin_users_unban")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
+        ]
+    )
+    await callback.message.edit_text(
+        "👤 <b>Пользователи</b>", parse_mode="HTML", reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_users_list")
+async def action_admin_users_list(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    result = await ctx.gas.request("list_banned_users", {})
+    if result.get("status") == "success":
+        users = result.get("users", [])
+        if not users:
+            text = "✅ Забаненных пользователей нет."
+        else:
+            text = "🚫 <b>Забаненные пользователи</b>\n\n"
+            for user in users:
+                text += f"• <code>{user}</code>\n"
+    else:
+        text = f"⚠️ Ошибка: {result.get('message', 'Неизвестная ошибка')}"
+
+    await callback.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="↩️ Назад", callback_data="admin_users")]]
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_users_ban")
+async def action_admin_users_ban(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.waiting_user_ban)
+    await callback.message.answer("Введите ID пользователя для бана.")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_users_unban")
+async def action_admin_users_unban(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.waiting_user_unban)
+    await callback.message.answer("Введите ID пользователя для разбана.")
+    await callback.answer()
+
+
+@router.message(AdminStates.waiting_user_ban)
+async def handle_users_ban(message: types.Message, state: FSMContext) -> None:
+    value = message.text.strip()
+    if not value.isdigit():
+        await message.answer("❌ Введите числовой ID пользователя.")
+        return
+    await _request_confirmation(
+        message,
+        state,
+        f"Забанить пользователя <code>{value}</code>?",
+        "ban_user",
+        {"user_id": int(value)},
+    )
+
+
+@router.message(AdminStates.waiting_user_unban)
+async def handle_users_unban(message: types.Message, state: FSMContext) -> None:
+    value = message.text.strip()
+    if not value.isdigit():
+        await message.answer("❌ Введите числовой ID пользователя.")
+        return
+    await _request_confirmation(
+        message,
+        state,
+        f"Разбанить пользователя <code>{value}</code>?",
+        "unban_user",
+        {"user_id": int(value)},
+    )
+
+
+@router.callback_query(F.data == "admin_diagnostics")
+async def action_admin_diagnostics(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    report, _ = await _run_self_check(ctx)
+    await callback.message.edit_text(
+        report,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")]]
+        ),
     )
     await callback.answer()
 

@@ -16,7 +16,9 @@ from aiogram.types import (
 )
 
 from coworkingbot.app.context import AppContext
+from coworkingbot.keyboards.main import main_menu_keyboard, menu_only_keyboard
 from coworkingbot.services.common import is_admin, is_past_booking, now
+from coworkingbot.services.errors import send_user_error
 from coworkingbot.services.notifications import (
     notify_admin_about_cancellation,
     notify_admin_about_new_booking,
@@ -30,15 +32,8 @@ router = Router()
 class BookingStates(StatesGroup):
     choosing_date = State()
     choosing_time = State()
-    choosing_duration = State()
     getting_name = State()
-    getting_phone = State()
     confirming_booking = State()
-
-
-class ReviewStates(StatesGroup):
-    waiting_for_text = State()
-    waiting_for_rating = State()
 
 
 def get_tomorrow_date(ctx: AppContext) -> str:
@@ -60,11 +55,6 @@ def parse_date(ctx: AppContext, date_str: str) -> tuple[datetime | None, str | N
         return parsed_date, None
     except ValueError:
         return None, "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ"
-
-
-def calculate_price(duration_hours: int) -> int:
-    price_per_hour = 2000 if duration_hours >= 4 else 2200
-    return price_per_hour * duration_hours
 
 
 def validate_phone(phone: str) -> bool:
@@ -159,41 +149,84 @@ def format_reviews_for_telegram(result: dict) -> str:
     return text
 
 
-@router.message(Command("my_bookings"))
-async def cmd_my_bookings(message: types.Message, ctx: AppContext) -> None:
-    user_id = message.from_user.id
+def _user_display_name(user: types.User) -> str:
+    full_name = " ".join(part for part in [user.first_name, user.last_name] if part)
+    return full_name or (user.username or "Гость")
 
+
+def _build_my_bookings_keyboard(bookings: list[dict]) -> InlineKeyboardMarkup:
+    buttons: list[list[InlineKeyboardButton]] = []
+    for idx, booking in enumerate(bookings, 1):
+        record_id = booking.get("id")
+        if not record_id:
+            continue
+        status = booking.get("status", "")
+        if status == "Оплачено":
+            continue
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=f"❌ Отменить {idx}", callback_data=f"booking_cancel:{record_id}"
+                ),
+                InlineKeyboardButton(
+                    text=f"🔁 Перенести {idx}", callback_data=f"booking_reschedule:{record_id}"
+                ),
+            ]
+        )
+
+    buttons.append([InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def send_my_bookings(message: types.Message, ctx: AppContext) -> None:
+    user_id = message.from_user.id
     result = await ctx.gas.request("get_user_bookings", {"user_id": user_id, "active_only": False})
 
-    if result.get("status") == "success":
-        bookings = result.get("bookings", [])
+    if result.get("status") != "success":
+        await send_user_error(
+            message,
+            ctx,
+            "⚠️ Не удалось получить список броней. Попробуйте позже.",
+            f"get_user_bookings failed: {result}",
+            "my_bookings",
+        )
+        return
 
-        if not bookings:
-            await message.answer("📭 У вас еще нет броней.")
-            return
+    bookings = result.get("bookings", [])
+    if not bookings:
+        await message.answer("📭 У вас еще нет броней.", reply_markup=main_menu_keyboard())
+        return
 
-        response = "📋 <b>Ваши брони</b>\n\n"
+    response = "📋 <b>Ваши брони</b>\n\n"
+    bot_info = await ctx.bot.get_me()
 
-        bot_info = await ctx.bot.get_me()
+    for i, booking in enumerate(bookings[:10], 1):
+        status = booking.get("status", "Неизвестно")
+        status_emoji = "✅" if status == "Оплачено" else "⏳"
+        response += f"{i}. {status_emoji} <b>{booking.get('date')} {booking.get('time')}</b>\n"
+        response += f"   Статус: {status}\n"
+        if booking.get("price"):
+            response += f"   Цена: {booking.get('price')} ₽\n"
+        response += f"   🆔 {booking.get('id')}\n"
 
-        for i, booking in enumerate(bookings[:10], 1):
-            status_emoji = "✅" if booking.get("status") == "Оплачено" else "⏳"
-            response += f"{i}. {status_emoji} <b>{booking.get('date')} {booking.get('time')}</b>\n"
-            response += f"   Статус: {booking.get('status')}\n"
-            if booking.get("price"):
-                response += f"   Цена: {booking.get('price')} ₽\n"
+        if status == "Оплачено" and is_past_booking(ctx, booking.get("date")):
+            response += (
+                "   📝 "
+                f"[Оставить отзыв](https://t.me/{bot_info.username}?start=review_{booking.get('id')})\n"
+            )
 
-            if booking.get("status") == "Оплачено" and is_past_booking(ctx, booking.get("date")):
-                response += (
-                    "   📝 "
-                    f"[Оставить отзыв](https://t.me/{bot_info.username}?start=review_{booking.get('id')})\n"
-                )
+        response += "\n"
 
-            response += "\n"
+    await message.answer(
+        response,
+        parse_mode="HTML",
+        reply_markup=_build_my_bookings_keyboard(bookings[:10]),
+    )
 
-        await message.answer(response, parse_mode="HTML")
-    else:
-        await message.answer(f"❌ Ошибка: {result.get('message', 'Неизвестная ошибка')}")
+
+@router.message(Command("my_bookings"))
+async def cmd_my_bookings(message: types.Message, ctx: AppContext) -> None:
+    await send_my_bookings(message, ctx)
 
 
 @router.message(Command("reviews"))
@@ -220,7 +253,7 @@ async def cmd_reviews(message: types.Message, ctx: AppContext) -> None:
         keyboard_buttons.append(
             [
                 InlineKeyboardButton(text="⭐ Оставить отзыв", callback_data="leave_review_info"),
-                InlineKeyboardButton(text="↩️ Главное меню", callback_data="main_menu"),
+                InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu"),
             ]
         )
 
@@ -228,9 +261,12 @@ async def cmd_reviews(message: types.Message, ctx: AppContext) -> None:
 
         await message.answer(reviews_text, parse_mode="HTML", reply_markup=keyboard)
     else:
-        await message.answer(
-            f"❌ Ошибка загрузки отзывов:\n{result.get('message', 'Попробуйте позже')}",
-            parse_mode="HTML",
+        await send_user_error(
+            message,
+            ctx,
+            "⚠️ Не удалось загрузить отзывы. Попробуйте позже.",
+            f"get_reviews failed: {result}",
+            "reviews",
         )
 
 
@@ -248,24 +284,65 @@ async def cmd_myid(message: types.Message, ctx: AppContext) -> None:
     )
 
 
-@router.message(F.text == "🔄 Новое бронирование")
-async def new_booking(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
+async def start_booking_flow(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
     await state.clear()
 
     tomorrow = get_tomorrow_date(ctx)
     await message.answer(
-        "📅 <b>ШАГ 1 из 7: Выберите дату</b>\n\n"
+        "📅 <b>Шаг 1: Выберите дату</b>\n\n"
         "Введите дату в формате <b>ДД.ММ.ГГГГ</b>\n"
         f"<i>Например: {tomorrow}</i>",
         parse_mode="HTML",
-        reply_markup=types.ReplyKeyboardRemove(),
+        reply_markup=menu_only_keyboard(),
     )
     await state.set_state(BookingStates.choosing_date)
 
 
-@router.message(F.text == "⭐ Отзывы клиентов")
-async def handle_reviews_button(message: types.Message, ctx: AppContext) -> None:
-    await cmd_reviews(message, ctx)
+async def send_confirmation(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
+    data = await state.get_data()
+    date_str = data.get("date_str", "")
+    selected_slot = data.get("selected_slot", "")
+    client_name = data.get("client_name") or _user_display_name(message.from_user)
+    client_phone = data.get("client_phone")
+
+    await state.update_data(client_name=client_name)
+
+    phone_text = client_phone if client_phone else "<i>не указан</i>"
+
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="✅ Подтвердить"),
+                KeyboardButton(text="❌ Отменить"),
+            ],
+            [KeyboardButton(text="✏️ Изменить имя")],
+            [KeyboardButton(text="📱 Отправить телефон", request_contact=True)],
+            [KeyboardButton(text="🏠 В меню")],
+        ],
+        resize_keyboard=True,
+    )
+
+    await message.answer(
+        "✅ <b>Подтверждение бронирования</b>\n\n"
+        f"📅 Дата: <b>{date_str}</b>\n"
+        f"🕐 Слот: <b>{selected_slot}</b>\n"
+        f"👤 Имя: <b>{client_name}</b>\n"
+        f"📞 Телефон: {phone_text}\n\n"
+        "Проверьте данные и подтвердите бронирование.",
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
+    await state.set_state(BookingStates.confirming_booking)
+
+
+@router.message(F.text == "📅 Забронировать")
+async def new_booking(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
+    await start_booking_flow(message, state, ctx)
+
+
+@router.message(F.text == "🧾 Мои брони")
+async def handle_my_bookings_button(message: types.Message, ctx: AppContext) -> None:
+    await send_my_bookings(message, ctx)
 
 
 @router.message(BookingStates.choosing_date)
@@ -278,6 +355,7 @@ async def process_date(message: types.Message, state: FSMContext, ctx: AppContex
         await message.answer(
             f"{error}\n\nВведите дату в формате <b>ДД.ММ.ГГГГ</b>\n<i>Например: {tomorrow}</i>",
             parse_mode="HTML",
+            reply_markup=menu_only_keyboard(),
         )
         return
 
@@ -293,6 +371,7 @@ async def process_date(message: types.Message, state: FSMContext, ctx: AppContex
         await message.answer(
             f"❌ На <b>{date_str}</b> нет свободных слотов.\n\nВыберите другую дату.",
             parse_mode="HTML",
+            reply_markup=menu_only_keyboard(),
         )
         await state.set_state(BookingStates.choosing_date)
         return
@@ -307,11 +386,12 @@ async def process_date(message: types.Message, state: FSMContext, ctx: AppContex
             keyboard_buttons.append(row)
             row = []
 
+    keyboard_buttons.append([KeyboardButton(text="🏠 В меню")])
     keyboard = ReplyKeyboardMarkup(keyboard=keyboard_buttons, resize_keyboard=True)
 
     await message.answer(
         f"📅 Дата: <b>{date_str}</b>\n"
-        "🕐 <b>ШАГ 2 из 7: Выберите свободное время</b>\n\n"
+        "🕐 <b>Шаг 2: Выберите свободное время</b>\n\n"
         "Доступные слоты:",
         parse_mode="HTML",
         reply_markup=keyboard,
@@ -347,6 +427,7 @@ async def process_time(message: types.Message, state: FSMContext, ctx: AppContex
                         keyboard_buttons.append(row)
                         row = []
 
+                keyboard_buttons.append([KeyboardButton(text="🏠 В меню")])
                 keyboard = ReplyKeyboardMarkup(keyboard=keyboard_buttons, resize_keyboard=True)
 
                 await message.answer(
@@ -356,222 +437,77 @@ async def process_time(message: types.Message, state: FSMContext, ctx: AppContex
                 )
             else:
                 await message.answer(
-                    f"❌ На <b>{date_str}</b> больше нет свободных слотов.", parse_mode="HTML"
+                    f"❌ На <b>{date_str}</b> больше нет свободных слотов.",
+                    parse_mode="HTML",
+                    reply_markup=menu_only_keyboard(),
                 )
                 await state.set_state(BookingStates.choosing_date)
             return
 
-    start_time = selected_slot.split("-")[0]
-
-    await state.update_data(selected_slot=selected_slot, start_time=start_time)
-
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [
-                KeyboardButton(text="1 час"),
-                KeyboardButton(text="2 часа"),
-                KeyboardButton(text="3 часа"),
-            ],
-            [
-                KeyboardButton(text="4 часа"),
-                KeyboardButton(text="5 часов"),
-                KeyboardButton(text="6 часов"),
-            ],
-            [KeyboardButton(text="↩️ Назад ко времени")],
-            [KeyboardButton(text="🔄 Начать заново")],
-        ],
-        resize_keyboard=True,
-    )
-
-    await message.answer(
-        f"🕐 Слот: <b>{selected_slot}</b>\n"
-        "⏱️ <b>ШАГ 3 из 7: Выберите длительность</b>\n\n"
-        "<i>Тарифы:</i>\n• До 4 часов: 2200 руб/час\n• От 4 часов: 2000 руб/час\n\n"
-        "Минимум - 1 час",
-        parse_mode="HTML",
-        reply_markup=keyboard,
-    )
-    await state.set_state(BookingStates.choosing_duration)
-
-
-@router.message(BookingStates.choosing_duration)
-async def process_duration(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
-    duration_text = message.text.strip()
-
-    if duration_text == "↩️ Назад ко времени":
-        data = await state.get_data()
-        free_slots = data.get("free_slots", [])
-        date_str = data.get("date_str", "")
-
-        if free_slots:
-            keyboard_buttons: list[list[KeyboardButton]] = []
-            row: list[KeyboardButton] = []
-            for i, slot in enumerate(free_slots):
-                row.append(KeyboardButton(text=slot))
-                if len(row) == 3 or i == len(free_slots) - 1:
-                    keyboard_buttons.append(row)
-                    row = []
-
-            keyboard = ReplyKeyboardMarkup(keyboard=keyboard_buttons, resize_keyboard=True)
-
-            await message.answer(
-                f"📅 Дата: <b>{date_str}</b>\n🕐 Выберите время:",
-                parse_mode="HTML",
-                reply_markup=keyboard,
-            )
-            await state.set_state(BookingStates.choosing_time)
-        else:
-            await message.answer("❌ Нет доступных слотов. Начнем заново.")
-            await new_booking(message, state, ctx)
-        return
-
-    if duration_text == "🔄 Начать заново":
-        await new_booking(message, state, ctx)
-        return
-
-    duration_map = {
-        "1 час": 1,
-        "2 часа": 2,
-        "3 часа": 3,
-        "4 часа": 4,
-        "5 часов": 5,
-        "6 часов": 6,
-    }
-
-    if duration_text not in duration_map:
-        await message.answer("❌ Выберите длительность из предложенных вариантов")
-        return
-
-    duration_hours = duration_map[duration_text]
-    price = calculate_price(duration_hours)
-
-    await state.update_data(duration_hours=duration_hours, duration_text=duration_text, price=price)
-
-    data = await state.get_data()
-    start_time = data.get("start_time", "")
-    end_hour = int(start_time.split(":")[0]) + duration_hours
-
-    await message.answer(
-        f"✅ Длительность: <b>{duration_text}</b>\n"
-        f"💰 Стоимость: <b>{price} руб.</b>\n"
-        f"🕒 Время: <b>{start_time} - {end_hour:02d}:00</b>\n\n"
-        "📝 <b>ШАГ 4 из 7: Введите ваше имя</b>\n\n"
-        "<i>Например: Иван Иванов</i>",
-        parse_mode="HTML",
-        reply_markup=types.ReplyKeyboardRemove(),
-    )
-    await state.set_state(BookingStates.getting_name)
+    await state.update_data(selected_slot=selected_slot)
+    await send_confirmation(message, state, ctx)
 
 
 @router.message(BookingStates.getting_name)
-async def process_name(message: types.Message, state: FSMContext) -> None:
+async def process_name(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
     name = message.text.strip()
 
     if len(name) < 2:
-        await message.answer("❌ Имя слишком короткое. Введите имя (минимум 2 символа):")
-        return
-
-    await state.update_data(client_name=name)
-
-    request_phone_button = KeyboardButton(text="📱 Отправить мой телефон", request_contact=True)
-
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [request_phone_button],
-            [KeyboardButton(text="↩️ Изменить имя")],
-            [KeyboardButton(text="🔄 Начать заново")],
-        ],
-        resize_keyboard=True,
-    )
-
-    await message.answer(
-        f"👤 Имя: <b>{name}</b>\n\n"
-        "📞 <b>ШАГ 5 из 7: Введите ваш телефон</b>\n\n"
-        "Можете отправить контакт кнопкой ниже\n"
-        "<i>Или введите вручную (например: 89991234567)</i>",
-        parse_mode="HTML",
-        reply_markup=keyboard,
-    )
-    await state.set_state(BookingStates.getting_phone)
-
-
-@router.message(BookingStates.getting_phone, F.content_type.in_({"contact", "text"}))
-async def process_phone(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
-    phone = None
-
-    if message.contact:
-        phone = message.contact.phone_number
-    elif message.text:
-        text = message.text.strip()
-
-        if text == "↩️ Изменить имя":
-            await message.answer("📝 Введите ваше имя (например: Иван Иванов):")
-            await state.set_state(BookingStates.getting_name)
-            return
-
-        if text == "🔄 Начать заново":
-            await new_booking(message, state, ctx)
-            return
-
-        phone = text
-
-    if not phone:
-        await message.answer("❌ Не удалось получить номер телефона. Попробуйте еще раз:")
-        return
-
-    if not validate_phone(phone):
         await message.answer(
-            "❌ Неверный формат телефона.\n\n"
-            "Используйте российский номер:\n"
-            "• 89991234567\n"
-            "• +79991234567\n"
-            "• 9991234567\n\n"
-            "Попробуйте еще раз:"
+            "❌ Имя слишком короткое. Введите имя (минимум 2 символа):",
+            reply_markup=menu_only_keyboard(),
         )
         return
 
-    formatted_phone = format_phone(phone)
-    await state.update_data(client_phone=formatted_phone)
-
-    data = await state.get_data()
-
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [
-                KeyboardButton(text="✅ Подтвердить бронирование"),
-                KeyboardButton(text="❌ Отменить"),
-            ],
-            [KeyboardButton(text="↩️ Изменить телефон")],
-            [KeyboardButton(text="🔄 Начать заново")],
-        ],
-        resize_keyboard=True,
-    )
-
-    start_time = data.get("start_time", "")
-    duration_hours = data.get("duration_hours", 1)
-    end_hour = int(start_time.split(":")[0]) + duration_hours
-
-    await message.answer(
-        "📋 <b>ШАГ 6 из 7: Итог бронирования</b>\n\n"
-        f"📅 Дата: <b>{data.get('date_str', '')}</b>\n"
-        f"🕐 Время: <b>{start_time} - {end_hour:02d}:00</b>\n"
-        f"⏱️ Длительность: <b>{data.get('duration_text', '')}</b>\n"
-        f"👤 Имя: <b>{data.get('client_name', '')}</b>\n"
-        f"📞 Телефон: <b>{formatted_phone}</b>\n"
-        f"💰 Стоимость: <b>{data.get('price', 0)} руб.</b>\n\n"
-        "<i>Проверьте данные. Всё верно?</i>",
-        parse_mode="HTML",
-        reply_markup=keyboard,
-    )
-    await state.set_state(BookingStates.confirming_booking)
+    await state.update_data(client_name=name)
+    await send_confirmation(message, state, ctx)
 
 
-@router.message(BookingStates.confirming_booking)
+@router.message(BookingStates.confirming_booking, F.content_type.in_({"contact", "text"}))
 async def process_confirmation(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
-    user_choice = message.text.strip()
+    if message.contact:
+        phone = message.contact.phone_number
+        if not validate_phone(phone):
+            await message.answer(
+                "❌ Неверный формат телефона. Попробуйте другой номер.",
+                reply_markup=menu_only_keyboard(),
+            )
+            return
+        formatted_phone = format_phone(phone)
+        await state.update_data(client_phone=formatted_phone)
+        await send_confirmation(message, state, ctx)
+        return
 
-    if user_choice == "✅ Подтвердить бронирование":
+    user_choice = (message.text or "").strip()
+
+    if validate_phone(user_choice):
+        formatted_phone = format_phone(user_choice)
+        await state.update_data(client_phone=formatted_phone)
+        await send_confirmation(message, state, ctx)
+        return
+
+    if user_choice == "✏️ Изменить имя":
+        await message.answer(
+            "📝 Введите имя для брони:",
+            reply_markup=menu_only_keyboard(),
+        )
+        await state.set_state(BookingStates.getting_name)
+        return
+
+    if user_choice == "❌ Отменить":
+        await message.answer(
+            "❌ Бронирование отменено.",
+            reply_markup=main_menu_keyboard(),
+        )
+        await state.clear()
+        return
+
+    if user_choice == "✅ Подтвердить":
         data = await state.get_data()
+        if not data.get("client_phone"):
+            await message.answer("📞 Пожалуйста, отправьте номер телефона (можно через кнопку).")
+            await send_confirmation(message, state, ctx)
+            return
 
         await message.answer("📝 Отправляю данные на сервер...", parse_mode="HTML")
 
@@ -588,21 +524,16 @@ async def process_confirmation(message: types.Message, state: FSMContext, ctx: A
         if result.get("status") == "success":
             record_id = result.get("record_id", "")
 
-            start_time = data.get("start_time", "")
-            duration_hours = data.get("duration_hours", 1)
-            end_hour = int(start_time.split(":")[0]) + duration_hours
-
             await message.answer(
                 "🎉 <b>Бронирование успешно создано!</b>\n\n"
                 f"📅 {data.get('date_str', '')}\n"
-                f"🕐 {start_time} - {end_hour:02d}:00\n"
-                f"⏱️ {data.get('duration_text', '')}\n"
+                f"🕐 {data.get('selected_slot', '')}\n"
                 f"👤 {data.get('client_name', '')}\n"
-                f"💰 {data.get('price', 0)} руб.\n\n"
+                f"📞 {data.get('client_phone', '')}\n\n"
                 f"📋 ID брони: <code>{record_id}</code>\n\n"
                 "✅ Администратор получил уведомление.",
                 parse_mode="HTML",
-                reply_markup=types.ReplyKeyboardRemove(),
+                reply_markup=main_menu_keyboard(),
             )
 
             logger.info("Created booking: %s (ID: %s)", booking_data, record_id)
@@ -610,61 +541,21 @@ async def process_confirmation(message: types.Message, state: FSMContext, ctx: A
             await notify_admin_about_new_booking(ctx, booking_data, record_id, message.from_user.id)
 
         else:
-            error_msg = result.get("message", "Неизвестная ошибка")
-            await message.answer(
-                f"❌ <b>Ошибка при создании брони:</b>\n\n{error_msg}\n\nПопробуйте снова.",
-                parse_mode="HTML",
-                reply_markup=types.ReplyKeyboardRemove(),
+            await send_user_error(
+                message,
+                ctx,
+                "⚠️ Не удалось создать бронь. Попробуйте позже.",
+                f"create_booking failed: {result}",
+                "create_booking",
             )
 
         await state.clear()
-
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="🔄 Новое бронирование")]], resize_keyboard=True
-        )
-        await message.answer("Хотите создать новое бронирование?", reply_markup=keyboard)
         return
 
-    if user_choice == "❌ Отменить":
-        await message.answer("❌ Бронирование отменено.", reply_markup=types.ReplyKeyboardRemove())
-        await state.clear()
-
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="🔄 Новое бронирование")]], resize_keyboard=True
-        )
-        await message.answer("Хотите создать новое бронирование?", reply_markup=keyboard)
-        return
-
-    if user_choice == "↩️ Изменить телефон":
-        request_phone_button = KeyboardButton(text="📱 Отправить мой телефон", request_contact=True)
-
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[
-                [request_phone_button],
-                [KeyboardButton(text="↩️ Изменить имя")],
-                [KeyboardButton(text="🔄 Начать заново")],
-            ],
-            resize_keyboard=True,
-        )
-
-        data = await state.get_data()
-
-        await message.answer(
-            "📞 <b>Измените телефон</b>\n\n"
-            f"Текущий: {data.get('client_phone', 'не указан')}\n\n"
-            "Можете отправить контакт кнопкой ниже\n"
-            "<i>Или введите вручную (например: 89991234567)</i>",
-            parse_mode="HTML",
-            reply_markup=keyboard,
-        )
-        await state.set_state(BookingStates.getting_phone)
-        return
-
-    if user_choice == "🔄 Начать заново":
-        await new_booking(message, state, ctx)
-        return
-
-    await message.answer("Пожалуйста, выберите действие из предложенных вариантов")
+    await message.answer(
+        "Пожалуйста, выберите действие из предложенных вариантов.",
+        reply_markup=menu_only_keyboard(),
+    )
 
 
 @router.message(Command("today_bookings"))
@@ -720,7 +611,13 @@ async def cmd_today_bookings(message: types.Message, ctx: AppContext) -> None:
 
         await message.answer(response, parse_mode="HTML")
     else:
-        await message.answer(f"❌ Ошибка: {result.get('message', 'Неизвестная ошибка')}")
+        await send_user_error(
+            message,
+            ctx,
+            "⚠️ Не удалось получить брони на сегодня. Попробуйте позже.",
+            f"get_user_bookings failed: {result}",
+            "today_bookings",
+        )
 
 
 @router.message(Command("cancel"))
@@ -745,7 +642,13 @@ async def cmd_cancel(message: types.Message, ctx: AppContext) -> None:
     result = await ctx.gas.request("get_user_bookings", {"user_id": user_id, "active_only": False})
 
     if result.get("status") != "success":
-        await message.answer(f"❌ Ошибка: {result.get('message', 'Неизвестная ошибка')}")
+        await send_user_error(
+            message,
+            ctx,
+            "⚠️ Не удалось получить бронь. Попробуйте позже.",
+            f"get_user_bookings failed: {result}",
+            "cancel_booking",
+        )
         return
 
     bookings = result.get("bookings", [])
@@ -783,8 +686,12 @@ async def cmd_cancel(message: types.Message, ctx: AppContext) -> None:
 
         await notify_admin_about_cancellation(ctx, record_id, user_booking, user_id)
     else:
-        await message.answer(
-            f"❌ Ошибка отмены: {cancel_result.get('message', 'Неизвестная ошибка')}"
+        await send_user_error(
+            message,
+            ctx,
+            "⚠️ Не удалось отменить бронь. Попробуйте позже.",
+            f"cancel_booking failed: {cancel_result}",
+            "cancel_booking",
         )
 
 
@@ -902,36 +809,187 @@ async def action_leave_review_info(callback: types.CallbackQuery) -> None:
 
 @router.callback_query(F.data == "my_bookings_callback")
 async def action_my_bookings_callback(callback: types.CallbackQuery, ctx: AppContext) -> None:
-    user_id = callback.from_user.id
+    await send_my_bookings(callback.message, ctx)
+    await callback.answer()
 
+
+@router.callback_query(F.data.startswith("booking_cancel:"))
+async def action_booking_cancel(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    record_id = callback.data.split("booking_cancel:", 1)[-1]
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Да, отменить", callback_data=f"booking_cancel_confirm:{record_id}"
+                ),
+                InlineKeyboardButton(text="↩️ Назад", callback_data="my_bookings_callback"),
+            ],
+            [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")],
+        ]
+    )
+    await callback.message.edit_text(
+        "⚠️ Вы уверены, что хотите отменить бронь?", reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("booking_reschedule:"))
+async def action_booking_reschedule(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    record_id = callback.data.split("booking_reschedule:", 1)[-1]
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Да, перенести",
+                    callback_data=f"booking_reschedule_confirm:{record_id}",
+                ),
+                InlineKeyboardButton(text="↩️ Назад", callback_data="my_bookings_callback"),
+            ],
+            [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")],
+        ]
+    )
+    await callback.message.edit_text(
+        "⚠️ Перенос означает отмену текущей брони и создание новой.",
+        reply_markup=keyboard,
+    )
+    await callback.answer()
+
+
+async def _find_user_booking(ctx: AppContext, user_id: int, record_id: str) -> dict | None:
     result = await ctx.gas.request("get_user_bookings", {"user_id": user_id, "active_only": False})
+    if result.get("status") != "success":
+        return None
+    bookings = result.get("bookings", [])
+    return next((b for b in bookings if b.get("id") == record_id), None)
 
-    if result.get("status") == "success":
-        bookings = result.get("bookings", [])
 
-        if not bookings:
-            await callback.message.answer("📭 У вас еще нет броней.")
-            await callback.answer()
-            return
+@router.callback_query(F.data.startswith("booking_cancel_confirm:"))
+async def action_booking_cancel_confirm(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    record_id = callback.data.split("booking_cancel_confirm:", 1)[-1]
+    user_id = callback.from_user.id
+    booking = await _find_user_booking(ctx, user_id, record_id)
 
-        response = "📋 <b>Ваши брони</b>\n\n"
-        bot_info = await ctx.bot.get_me()
+    if not booking:
+        await callback.message.edit_text(
+            "❌ Бронь не найдена или у вас нет прав для отмены.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
+            ),
+        )
+        await callback.answer()
+        return
 
-        for i, booking in enumerate(bookings[:10], 1):
-            status_emoji = "✅" if booking.get("status") == "Оплачено" else "⏳"
-            response += f"{i}. {status_emoji} <b>{booking.get('date')} {booking.get('time')}</b>\n"
-            response += f"   Статус: {booking.get('status')}\n"
-            if booking.get("price"):
-                response += f"   Цена: {booking.get('price')} ₽\n"
+    if booking.get("status") == "Оплачено":
+        await callback.message.edit_text(
+            "⚠️ Оплаченные брони нельзя отменить через бота. Свяжитесь с поддержкой.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
+            ),
+        )
+        await callback.answer()
+        return
 
-            if booking.get("status") == "Оплачено" and is_past_booking(ctx, booking.get("date")):
-                response += f"   [📝 Оставить отзыв](https://t.me/{bot_info.username}?start=review_{booking.get('id')})\n"
+    cancel_result = await ctx.gas.request(
+        "cancel_booking", {"record_id": record_id, "user_id": str(user_id)}
+    )
 
-            response += "\n"
-
-        await callback.message.answer(response, parse_mode="HTML")
+    if cancel_result.get("status") == "success":
+        await callback.message.edit_text(
+            "✅ Бронь отменена.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
+            ),
+        )
+        await notify_admin_about_cancellation(ctx, record_id, booking, user_id)
     else:
-        await callback.message.answer(f"❌ Ошибка: {result.get('message', 'Неизвестная ошибка')}")
+        await callback.message.edit_text(
+            "⚠️ Не удалось отменить бронь. Попробуйте позже.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
+            ),
+        )
+        await send_user_error(
+            callback.message,
+            ctx,
+            "⚠️ Не удалось отменить бронь. Попробуйте позже.",
+            f"cancel_booking failed: {cancel_result}",
+            "cancel_booking",
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("booking_reschedule_confirm:"))
+async def action_booking_reschedule_confirm(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    record_id = callback.data.split("booking_reschedule_confirm:", 1)[-1]
+    user_id = callback.from_user.id
+    booking = await _find_user_booking(ctx, user_id, record_id)
+
+    if not booking:
+        await callback.message.edit_text(
+            "❌ Бронь не найдена или у вас нет прав для переноса.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
+            ),
+        )
+        await callback.answer()
+        return
+
+    if booking.get("status") == "Оплачено":
+        await callback.message.edit_text(
+            "⚠️ Оплаченные брони нельзя переносить через бота. Свяжитесь с поддержкой.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
+            ),
+        )
+        await callback.answer()
+        return
+
+    cancel_result = await ctx.gas.request(
+        "cancel_booking", {"record_id": record_id, "user_id": str(user_id)}
+    )
+
+    if cancel_result.get("status") == "success":
+        await notify_admin_about_cancellation(ctx, record_id, booking, user_id, reason="переносом")
+        await callback.message.edit_text(
+            "✅ Бронь отменена. Давайте выберем новую дату.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
+            ),
+        )
+        await start_booking_flow(callback.message, state, ctx)
+    else:
+        await callback.message.edit_text(
+            "⚠️ Не удалось перенести бронь. Попробуйте позже.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
+            ),
+        )
+        await send_user_error(
+            callback.message,
+            ctx,
+            "⚠️ Не удалось перенести бронь. Попробуйте позже.",
+            f"reschedule cancel failed: {cancel_result}",
+            "reschedule_booking",
+        )
 
     await callback.answer()
 
