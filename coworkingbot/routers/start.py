@@ -13,9 +13,8 @@ async def send_main_menu(message: types.Message, state: FSMContext | None = None
     if state is not None:
         await state.clear()
     await message.answer(
-        "👋 Добро пожаловать в бот бронирования коворкинга!\n"
-        "Слоты по 2 часа.\n\n"
-        "Выберите действие:",
+        "Добро пожаловать!\n"
+        "Начните с бронирования — это займёт пару минут.",
         reply_markup=main_menu_keyboard(),
     )
 
