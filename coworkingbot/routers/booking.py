@@ -8,14 +8,21 @@ from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 from coworkingbot.app.context import AppContext
+from coworkingbot.keyboards.main import main_menu_keyboard, menu_only_keyboard
 from coworkingbot.services.common import is_admin, is_past_booking, now
 from coworkingbot.services.errors import send_user_error
-from coworkingbot.services.notifications import notify_admin_about_cancellation
-from coworkingbot.services.notifications import notify_admin_about_new_booking
-from coworkingbot.keyboards.main import main_menu_keyboard, menu_only_keyboard
+from coworkingbot.services.notifications import (
+    notify_admin_about_cancellation,
+    notify_admin_about_new_booking,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -866,7 +873,9 @@ async def action_booking_cancel_confirm(callback: types.CallbackQuery, ctx: AppC
         await callback.message.edit_text(
             "❌ Бронь не найдена или у вас нет прав для отмены.",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
             ),
         )
         await callback.answer()
@@ -876,7 +885,9 @@ async def action_booking_cancel_confirm(callback: types.CallbackQuery, ctx: AppC
         await callback.message.edit_text(
             "⚠️ Оплаченные брони нельзя отменить через бота. Свяжитесь с поддержкой.",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
             ),
         )
         await callback.answer()
@@ -890,7 +901,9 @@ async def action_booking_cancel_confirm(callback: types.CallbackQuery, ctx: AppC
         await callback.message.edit_text(
             "✅ Бронь отменена.",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
             ),
         )
         await notify_admin_about_cancellation(ctx, record_id, booking, user_id)
@@ -898,7 +911,9 @@ async def action_booking_cancel_confirm(callback: types.CallbackQuery, ctx: AppC
         await callback.message.edit_text(
             "⚠️ Не удалось отменить бронь. Попробуйте позже.",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
             ),
         )
         await send_user_error(
@@ -924,7 +939,9 @@ async def action_booking_reschedule_confirm(
         await callback.message.edit_text(
             "❌ Бронь не найдена или у вас нет прав для переноса.",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
             ),
         )
         await callback.answer()
@@ -934,7 +951,9 @@ async def action_booking_reschedule_confirm(
         await callback.message.edit_text(
             "⚠️ Оплаченные брони нельзя переносить через бота. Свяжитесь с поддержкой.",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
             ),
         )
         await callback.answer()
@@ -949,7 +968,9 @@ async def action_booking_reschedule_confirm(
         await callback.message.edit_text(
             "✅ Бронь отменена. Давайте выберем новую дату.",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
             ),
         )
         await start_booking_flow(callback.message, state, ctx)
@@ -957,7 +978,9 @@ async def action_booking_reschedule_confirm(
         await callback.message.edit_text(
             "⚠️ Не удалось перенести бронь. Попробуйте позже.",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]
+                ]
             ),
         )
         await send_user_error(
