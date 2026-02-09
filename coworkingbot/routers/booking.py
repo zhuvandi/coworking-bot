@@ -289,13 +289,38 @@ async def start_booking_flow(message: types.Message, state: FSMContext, ctx: App
 
     tomorrow = get_tomorrow_date(ctx)
     await message.answer(
-        "📅 <b>Шаг 1: Выберите дату</b>\n\n"
-        "Введите дату в формате <b>ДД.ММ.ГГГГ</b>\n"
+        "📅 <b>Шаг 1/4: Выберите дату</b>\n\n"
+        "Введите дату в формате <b>ДД.ММ.ГГГГ</b>.\n"
+        "Дальше выберем удобное время.\n"
         f"<i>Например: {tomorrow}</i>",
         parse_mode="HTML",
         reply_markup=menu_only_keyboard(),
     )
     await state.set_state(BookingStates.choosing_date)
+
+
+async def send_time_selection(
+    message: types.Message, date_str: str, free_slots: list[str]
+) -> None:
+    keyboard_buttons: list[list[KeyboardButton]] = []
+    row: list[KeyboardButton] = []
+    for i, slot in enumerate(free_slots):
+        row.append(KeyboardButton(text=slot))
+        if len(row) == 3 or i == len(free_slots) - 1:
+            keyboard_buttons.append(row)
+            row = []
+
+    keyboard_buttons.append([KeyboardButton(text="⬅️ Назад")])
+    keyboard_buttons.append([KeyboardButton(text="🏠 В меню")])
+    keyboard = ReplyKeyboardMarkup(keyboard=keyboard_buttons, resize_keyboard=True)
+
+    await message.answer(
+        f"📅 Дата: <b>{date_str}</b>\n"
+        "🕐 <b>Шаг 2/4: Выберите время</b>\n\n"
+        "Дальше попросим ваше имя.",
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
 
 
 async def send_confirmation(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
@@ -313,22 +338,22 @@ async def send_confirmation(message: types.Message, state: FSMContext, ctx: AppC
         keyboard=[
             [
                 KeyboardButton(text="✅ Подтвердить"),
-                KeyboardButton(text="❌ Отменить"),
             ],
-            [KeyboardButton(text="✏️ Изменить имя")],
-            [KeyboardButton(text="📱 Отправить телефон", request_contact=True)],
+            [KeyboardButton(text="↩️ Изменить")],
             [KeyboardButton(text="🏠 В меню")],
         ],
         resize_keyboard=True,
     )
 
     await message.answer(
-        "✅ <b>Подтверждение бронирования</b>\n\n"
-        f"📅 Дата: <b>{date_str}</b>\n"
-        f"🕐 Слот: <b>{selected_slot}</b>\n"
-        f"👤 Имя: <b>{client_name}</b>\n"
-        f"📞 Телефон: {phone_text}\n\n"
-        "Проверьте данные и подтвердите бронирование.",
+        "✅ <b>Шаг 4/4: Подтверждение</b>\n\n"
+        "Проверьте данные перед подтверждением:\n"
+        f"• Дата: <b>{date_str}</b>\n"
+        f"• Время: <b>{selected_slot}</b>\n"
+        "• Длительность: <b>1 слот (2 часа)</b>\n"
+        f"• Имя: <b>{client_name}</b>\n"
+        f"• Телефон: {phone_text}\n\n"
+        "Если всё верно — нажмите «Подтвердить».",
         parse_mode="HTML",
         reply_markup=keyboard,
     )
@@ -353,7 +378,11 @@ async def process_date(message: types.Message, state: FSMContext, ctx: AppContex
     if error:
         tomorrow = get_tomorrow_date(ctx)
         await message.answer(
-            f"{error}\n\nВведите дату в формате <b>ДД.ММ.ГГГГ</b>\n<i>Например: {tomorrow}</i>",
+            "📅 <b>Шаг 1/4: Выберите дату</b>\n\n"
+            f"{error}\n\n"
+            "Введите дату в формате <b>ДД.ММ.ГГГГ</b>.\n"
+            "Дальше выберем удобное время.\n"
+            f"<i>Например: {tomorrow}</i>",
             parse_mode="HTML",
             reply_markup=menu_only_keyboard(),
         )
@@ -369,7 +398,9 @@ async def process_date(message: types.Message, state: FSMContext, ctx: AppContex
 
     if not free_slots:
         await message.answer(
-            f"❌ На <b>{date_str}</b> нет свободных слотов.\n\nВыберите другую дату.",
+            "📅 <b>Шаг 1/4: Выберите дату</b>\n\n"
+            f"❌ На <b>{date_str}</b> нет свободных слотов.\n\n"
+            "Введите другую дату.",
             parse_mode="HTML",
             reply_markup=menu_only_keyboard(),
         )
@@ -378,24 +409,7 @@ async def process_date(message: types.Message, state: FSMContext, ctx: AppContex
 
     await state.update_data(free_slots=free_slots)
 
-    keyboard_buttons: list[list[KeyboardButton]] = []
-    row: list[KeyboardButton] = []
-    for i, slot in enumerate(free_slots):
-        row.append(KeyboardButton(text=slot))
-        if len(row) == 3 or i == len(free_slots) - 1:
-            keyboard_buttons.append(row)
-            row = []
-
-    keyboard_buttons.append([KeyboardButton(text="🏠 В меню")])
-    keyboard = ReplyKeyboardMarkup(keyboard=keyboard_buttons, resize_keyboard=True)
-
-    await message.answer(
-        f"📅 Дата: <b>{date_str}</b>\n"
-        "🕐 <b>Шаг 2: Выберите свободное время</b>\n\n"
-        "Доступные слоты:",
-        parse_mode="HTML",
-        reply_markup=keyboard,
-    )
+    await send_time_selection(message, date_str, free_slots)
     await state.set_state(BookingStates.choosing_time)
 
 
@@ -407,6 +421,10 @@ async def process_time(message: types.Message, state: FSMContext, ctx: AppContex
     free_slots = data.get("free_slots", [])
     date_str = data.get("date_str", "")
 
+    if selected_slot == "⬅️ Назад":
+        await start_booking_flow(message, state, ctx)
+        return
+
     if selected_slot not in free_slots:
         current_free_slots = await get_free_slots_for_date(ctx, date_str)
 
@@ -414,30 +432,21 @@ async def process_time(message: types.Message, state: FSMContext, ctx: AppContex
             await state.update_data(free_slots=current_free_slots)
             free_slots = current_free_slots
         else:
-            await message.answer("❌ Этот слот только что заняли! Выбирайте из доступных:")
+            await message.answer(
+                "🕐 <b>Шаг 2/4: Выберите время</b>\n\n"
+                "❌ Этот слот только что заняли. Выберите другое время.",
+                parse_mode="HTML",
+            )
             await state.update_data(free_slots=current_free_slots)
             free_slots = current_free_slots
 
             if current_free_slots:
-                keyboard_buttons: list[list[KeyboardButton]] = []
-                row: list[KeyboardButton] = []
-                for i, slot in enumerate(current_free_slots):
-                    row.append(KeyboardButton(text=slot))
-                    if len(row) == 3 or i == len(current_free_slots) - 1:
-                        keyboard_buttons.append(row)
-                        row = []
-
-                keyboard_buttons.append([KeyboardButton(text="🏠 В меню")])
-                keyboard = ReplyKeyboardMarkup(keyboard=keyboard_buttons, resize_keyboard=True)
-
-                await message.answer(
-                    f"📅 Дата: <b>{date_str}</b>\n🕐 Обновленные слоты:",
-                    parse_mode="HTML",
-                    reply_markup=keyboard,
-                )
+                await send_time_selection(message, date_str, current_free_slots)
             else:
                 await message.answer(
-                    f"❌ На <b>{date_str}</b> больше нет свободных слотов.",
+                    "📅 <b>Шаг 1/4: Выберите дату</b>\n\n"
+                    f"❌ На <b>{date_str}</b> больше нет свободных слотов.\n\n"
+                    "Введите другую дату.",
                     parse_mode="HTML",
                     reply_markup=menu_only_keyboard(),
                 )
@@ -445,17 +454,44 @@ async def process_time(message: types.Message, state: FSMContext, ctx: AppContex
             return
 
     await state.update_data(selected_slot=selected_slot)
-    await send_confirmation(message, state, ctx)
+    await message.answer(
+        "👤 <b>Шаг 3/4: Введите имя</b>\n\n"
+        "Имя нужно для подтверждения брони.\n"
+        "Дальше покажем итог для проверки.",
+        parse_mode="HTML",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="⬅️ Назад")], [KeyboardButton(text="🏠 В меню")]],
+            resize_keyboard=True,
+        ),
+    )
+    await state.set_state(BookingStates.getting_name)
 
 
 @router.message(BookingStates.getting_name)
 async def process_name(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
     name = message.text.strip()
 
+    if name == "⬅️ Назад":
+        data = await state.get_data()
+        date_str = data.get("date_str", "")
+        free_slots = data.get("free_slots", [])
+        if date_str and free_slots:
+            await send_time_selection(message, date_str, free_slots)
+            await state.set_state(BookingStates.choosing_time)
+        else:
+            await start_booking_flow(message, state, ctx)
+        return
+
     if len(name) < 2:
         await message.answer(
-            "❌ Имя слишком короткое. Введите имя (минимум 2 символа):",
-            reply_markup=menu_only_keyboard(),
+            "👤 <b>Шаг 3/4: Введите имя</b>\n\n"
+            "❌ Имя слишком короткое. Введите минимум 2 символа.\n"
+            "Дальше покажем итог для проверки.",
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="⬅️ Назад")], [KeyboardButton(text="🏠 В меню")]],
+                resize_keyboard=True,
+            ),
         )
         return
 
@@ -486,26 +522,26 @@ async def process_confirmation(message: types.Message, state: FSMContext, ctx: A
         await send_confirmation(message, state, ctx)
         return
 
-    if user_choice == "✏️ Изменить имя":
+    if user_choice == "↩️ Изменить":
         await message.answer(
-            "📝 Введите имя для брони:",
-            reply_markup=menu_only_keyboard(),
+            "👤 <b>Шаг 3/4: Введите имя</b>\n\n"
+            "Имя нужно для подтверждения брони.\n"
+            "Дальше покажем итог для проверки.",
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="⬅️ Назад")], [KeyboardButton(text="🏠 В меню")]],
+                resize_keyboard=True,
+            ),
         )
         await state.set_state(BookingStates.getting_name)
-        return
-
-    if user_choice == "❌ Отменить":
-        await message.answer(
-            "❌ Бронирование отменено.",
-            reply_markup=main_menu_keyboard(),
-        )
-        await state.clear()
         return
 
     if user_choice == "✅ Подтвердить":
         data = await state.get_data()
         if not data.get("client_phone"):
-            await message.answer("📞 Пожалуйста, отправьте номер телефона (можно через кнопку).")
+            await message.answer(
+                "📞 Пожалуйста, отправьте номер телефона текстом в ответ."
+            )
             await send_confirmation(message, state, ctx)
             return
 
@@ -525,15 +561,22 @@ async def process_confirmation(message: types.Message, state: FSMContext, ctx: A
             record_id = result.get("record_id", "")
 
             await message.answer(
-                "🎉 <b>Бронирование успешно создано!</b>\n\n"
+                "Готово ✅\n"
+                "Бронь создана.\n\n"
                 f"📅 {data.get('date_str', '')}\n"
                 f"🕐 {data.get('selected_slot', '')}\n"
                 f"👤 {data.get('client_name', '')}\n"
                 f"📞 {data.get('client_phone', '')}\n\n"
                 f"📋 ID брони: <code>{record_id}</code>\n\n"
-                "✅ Администратор получил уведомление.",
+                "Дальше вы можете посмотреть детали в «Мои брони».",
                 parse_mode="HTML",
-                reply_markup=main_menu_keyboard(),
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[
+                        [KeyboardButton(text="🧾 Мои брони")],
+                        [KeyboardButton(text="🏠 В меню")],
+                    ],
+                    resize_keyboard=True,
+                ),
             )
 
             logger.info("Created booking: %s (ID: %s)", booking_data, record_id)
@@ -552,10 +595,7 @@ async def process_confirmation(message: types.Message, state: FSMContext, ctx: A
         await state.clear()
         return
 
-    await message.answer(
-        "Пожалуйста, выберите действие из предложенных вариантов.",
-        reply_markup=menu_only_keyboard(),
-    )
+    await send_confirmation(message, state, ctx)
 
 
 @router.message(Command("today_bookings"))
