@@ -6,8 +6,7 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="📅 Забронировать")],
             [KeyboardButton(text="🧾 Мои брони")],
-            [KeyboardButton(text="ℹ️ Правила")],
-            [KeyboardButton(text="🛟 Поддержка")],
+            [KeyboardButton(text="📄 Условия")],
         ],
         resize_keyboard=True,
         selective=True,

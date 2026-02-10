@@ -39,19 +39,50 @@ class AdminStates(StatesGroup):
 def admin_panel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(text="📊 Сводка", callback_data="admin_summary"),
-                InlineKeyboardButton(text="⛔️ Исключения", callback_data="admin_exceptions"),
-            ],
-            [
-                InlineKeyboardButton(text="🧩 Настройки", callback_data="admin_settings"),
-                InlineKeyboardButton(text="👤 Пользователи", callback_data="admin_users"),
-            ],
-            [
-                InlineKeyboardButton(text="🧪 Диагностика", callback_data="admin_diagnostics"),
-                InlineKeyboardButton(text="❓ Помощь", callback_data="admin_help"),
-            ],
+            [InlineKeyboardButton(text="🛠 Управление", callback_data="admin_hub_manage")],
+            [InlineKeyboardButton(text="👁 Просмотр", callback_data="admin_hub_view")],
+            [InlineKeyboardButton(text="⚙️ Система", callback_data="admin_hub_system")],
             [InlineKeyboardButton(text="🚪 Выйти", callback_data="main_menu")],
+        ]
+    )
+
+
+def admin_manage_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Подтвердить оплату", callback_data="admin_confirm_payment_help"
+                )
+            ],
+            [InlineKeyboardButton(text="⛔️ Исключения", callback_data="admin_exceptions")],
+            [InlineKeyboardButton(text="👤 Пользователи", callback_data="admin_users")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
+        ]
+    )
+
+
+def admin_view_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📊 Сводка", callback_data="admin_summary")],
+            [
+                InlineKeyboardButton(text="📅 Сегодня", callback_data="admin_view_today"),
+                InlineKeyboardButton(text="📅 Завтра", callback_data="admin_view_tomorrow"),
+            ],
+            [InlineKeyboardButton(text="⭐ Отзывы", callback_data="admin_all_reviews")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
+        ]
+    )
+
+
+def admin_system_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🧩 Настройки", callback_data="admin_settings")],
+            [InlineKeyboardButton(text="🧪 Диагностика", callback_data="admin_diagnostics")],
+            [InlineKeyboardButton(text="❓ Помощь", callback_data="admin_help")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
         ]
     )
 
@@ -99,6 +130,48 @@ async def cmd_admin(message: types.Message, ctx: AppContext) -> None:
         parse_mode="HTML",
         reply_markup=admin_panel_keyboard(),
     )
+
+
+@router.callback_query(F.data == "admin_hub_manage")
+async def action_admin_hub_manage(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "🛠 <b>Управление</b>\n\nОперационные действия:",
+        parse_mode="HTML",
+        reply_markup=admin_manage_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_hub_view")
+async def action_admin_hub_view(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "👁 <b>Просмотр</b>\n\nДанные без изменений:",
+        parse_mode="HTML",
+        reply_markup=admin_view_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_hub_system")
+async def action_admin_hub_system(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "⚙️ <b>Система</b>\n\nСервисные функции:",
+        parse_mode="HTML",
+        reply_markup=admin_system_keyboard(),
+    )
+    await callback.answer()
 
 
 async def _run_self_check(ctx: AppContext) -> tuple[str, bool]:
@@ -292,6 +365,27 @@ async def action_admin_back(
         "👑 <b>Админ-панель</b>\n\nВыберите действие:",
         parse_mode="HTML",
         reply_markup=admin_panel_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_confirm_payment_help")
+async def action_admin_confirm_payment_help(
+    callback: types.CallbackQuery, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "✅ <b>Подтверждение оплаты</b>\n\n"
+        "Используйте команду:\n"
+        "<code>/confirm ID_записи</code>\n\n"
+        "ID можно взять из списка броней.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")]]
+        ),
     )
     await callback.answer()
 
