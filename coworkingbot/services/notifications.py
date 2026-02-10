@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 import logging
+import time
+from dataclasses import dataclass
 
 from coworkingbot.app.context import AppContext
 from coworkingbot.services.common import now
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _ErrorAggregate:
+    count: int
+    first_seen: float
+    last_sent: float
+
+
+_ERROR_BUCKETS: dict[str, _ErrorAggregate] = {}
+_ERROR_AGGREGATION_WINDOW_SECONDS = 600
+_ERROR_SEND_EVERY = 5
 
 
 async def _send_message(ctx: AppContext, chat_id: int, text: str) -> None:
@@ -16,6 +30,7 @@ async def _send_message(ctx: AppContext, chat_id: int, text: str) -> None:
 
 
 async def send_admin_alert(ctx: AppContext, text: str) -> None:
+    """Send informational alerts to service chat, fallback to admin DMs."""
     if ctx.settings.admin_alerts_chat_id is not None:
         await _send_message(ctx, ctx.settings.admin_alerts_chat_id, text)
         return
@@ -24,6 +39,7 @@ async def send_admin_alert(ctx: AppContext, text: str) -> None:
 
 
 async def send_admin_action_required(ctx: AppContext, text: str) -> None:
+    """DM admins only for events where explicit human action is needed."""
     if not ctx.settings.admin_ids:
         logger.warning("No admin IDs configured for action-required message.")
         return
@@ -36,10 +52,30 @@ async def send_admin_notification(ctx: AppContext, text: str) -> None:
 
 
 async def notify_admin_about_error(ctx: AppContext, error_message: str, context: str = "") -> None:
+    """Aggregate repeated backend errors to reduce spam in admin channels."""
+    key = f"{context}:{error_message[:120]}"
+    current_time = time.monotonic()
+    bucket = _ERROR_BUCKETS.get(key)
+    if bucket is None:
+        bucket = _ErrorAggregate(count=0, first_seen=current_time, last_sent=0)
+        _ERROR_BUCKETS[key] = bucket
+
+    bucket.count += 1
+    should_send = bucket.count == 1 or bucket.count % _ERROR_SEND_EVERY == 0
+    if current_time - bucket.last_sent >= _ERROR_AGGREGATION_WINDOW_SECONDS:
+        should_send = True
+
+    if not should_send:
+        return
+
+    bucket.last_sent = current_time
+    duration = int(current_time - bucket.first_seen)
     message_text = (
         "🚨 <b>ОШИБКА В СИСТЕМЕ</b>\n\n"
         f"🕐 Время: {now(ctx).strftime('%H:%M %d.%m.%Y')}\n"
         f"📝 Контекст: {context}\n"
+        f"📈 Повторений: {bucket.count}\n"
+        f"⏱ Накопление: {duration} сек\n"
         f"💥 Ошибка: {error_message[:500]}"
     )
     await send_admin_alert(ctx, message_text)
@@ -96,6 +132,22 @@ async def notify_admin_about_new_booking(
     )
 
     await send_admin_alert(ctx, message_text)
+    await send_admin_action_required(
+        ctx,
+        "⚠️ <b>ТРЕБУЕТСЯ ДЕЙСТВИЕ</b>\n\n"
+        f"Новая бронь <code>{record_id}</code> ожидает подтверждения оплаты.\n"
+        "Проверьте оплату и выполните /confirm ID_записи.",
+    )
+
+
+async def notify_admin_about_conflict(ctx: AppContext, details: str) -> None:
+    """Conflicts need direct admin action, so they go to personal DMs."""
+    await send_admin_action_required(
+        ctx,
+        "⚠️ <b>КОНФЛИКТ БРОНИРОВАНИЯ</b>\n\n"
+        f"🕐 Время: {now(ctx).strftime('%H:%M %d.%m.%Y')}\n"
+        f"📝 Детали: {details[:700]}",
+    )
 
 
 async def notify_admin_about_new_review(

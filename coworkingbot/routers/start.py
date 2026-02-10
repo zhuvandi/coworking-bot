@@ -23,7 +23,7 @@ async def send_main_menu(
 
     await message.answer(
         text,
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(content.booking_button_label),
     )
 
 

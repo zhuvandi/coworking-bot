@@ -17,6 +17,12 @@ router = Router()
 async def unknown_message(message: types.Message, state: FSMContext) -> None:
     current_state = await state.get_state()
     if current_state:
+        logger.warning(
+            "User stuck in FSM state=%s user_id=%s text=%r",
+            current_state,
+            message.from_user.id if message.from_user else "unknown",
+            message.text,
+        )
         await message.answer("Пожалуйста, завершите текущее действие или нажмите «🏠 В меню».")
     else:
         await message.answer(

@@ -18,9 +18,11 @@ from aiogram.types import (
 from coworkingbot.app.context import AppContext
 from coworkingbot.keyboards.main import main_menu_keyboard, menu_only_keyboard
 from coworkingbot.services.common import is_admin, is_past_booking, now
+from coworkingbot.services.content_store import get_client_content
 from coworkingbot.services.errors import send_user_error
 from coworkingbot.services.notifications import (
     notify_admin_about_cancellation,
+    notify_admin_about_conflict,
     notify_admin_about_new_booking,
 )
 
@@ -299,9 +301,7 @@ async def start_booking_flow(message: types.Message, state: FSMContext, ctx: App
     await state.set_state(BookingStates.choosing_date)
 
 
-async def send_time_selection(
-    message: types.Message, date_str: str, free_slots: list[str]
-) -> None:
+async def send_time_selection(message: types.Message, date_str: str, free_slots: list[str]) -> None:
     keyboard_buttons: list[list[KeyboardButton]] = []
     row: list[KeyboardButton] = []
     for i, slot in enumerate(free_slots):
@@ -360,7 +360,7 @@ async def send_confirmation(message: types.Message, state: FSMContext, ctx: AppC
     await state.set_state(BookingStates.confirming_booking)
 
 
-@router.message(F.text == "📅 Забронировать")
+@router.message(F.text.regexp(r"(?i).*заброн.*"))
 async def new_booking(message: types.Message, state: FSMContext, ctx: AppContext) -> None:
     await start_booking_flow(message, state, ctx)
 
@@ -539,9 +539,7 @@ async def process_confirmation(message: types.Message, state: FSMContext, ctx: A
     if user_choice == "✅ Подтвердить":
         data = await state.get_data()
         if not data.get("client_phone"):
-            await message.answer(
-                "📞 Пожалуйста, отправьте номер телефона текстом в ответ."
-            )
+            await message.answer("📞 Пожалуйста, отправьте номер телефона текстом в ответ.")
             await send_confirmation(message, state, ctx)
             return
 
@@ -560,15 +558,15 @@ async def process_confirmation(message: types.Message, state: FSMContext, ctx: A
         if result.get("status") == "success":
             record_id = result.get("record_id", "")
 
+            content = await get_client_content(ctx)
             await message.answer(
-                "Готово ✅\n"
-                "Бронь создана.\n\n"
-                f"📅 {data.get('date_str', '')}\n"
-                f"🕐 {data.get('selected_slot', '')}\n"
-                f"👤 {data.get('client_name', '')}\n"
-                f"📞 {data.get('client_phone', '')}\n\n"
-                f"📋 ID брони: <code>{record_id}</code>\n\n"
-                "Дальше вы можете посмотреть детали в «Мои брони».",
+                content.booking_success.format(
+                    date=data.get("date_str", ""),
+                    time=data.get("selected_slot", ""),
+                    name=data.get("client_name", ""),
+                    phone=data.get("client_phone", ""),
+                    record_id=record_id,
+                ),
                 parse_mode="HTML",
                 reply_markup=ReplyKeyboardMarkup(
                     keyboard=[
@@ -584,6 +582,9 @@ async def process_confirmation(message: types.Message, state: FSMContext, ctx: A
             await notify_admin_about_new_booking(ctx, booking_data, record_id, message.from_user.id)
 
         else:
+            result_message = str(result.get("message", ""))
+            if "конфликт" in result_message.lower() or "slot" in result_message.lower():
+                await notify_admin_about_conflict(ctx, f"create_booking conflict: {result}")
             await send_user_error(
                 message,
                 ctx,
@@ -1005,8 +1006,9 @@ async def action_booking_reschedule_confirm(
 
     if cancel_result.get("status") == "success":
         await notify_admin_about_cancellation(ctx, record_id, booking, user_id, reason="переносом")
+        content = await get_client_content(ctx)
         await callback.message.edit_text(
-            "✅ Бронь отменена. Давайте выберем новую дату.",
+            content.booking_cancel_reschedule,
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")]

@@ -1,10 +1,10 @@
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 
-def main_menu_keyboard() -> ReplyKeyboardMarkup:
+def main_menu_keyboard(booking_label: str = "📅 Забронировать") -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📅 Забронировать")],
+            [KeyboardButton(text=booking_label)],
             [KeyboardButton(text="🧾 Мои брони")],
             [KeyboardButton(text="📄 Условия")],
         ],
