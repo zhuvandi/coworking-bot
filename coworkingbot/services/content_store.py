@@ -14,7 +14,15 @@ logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS = 60
 DEFAULT_CONTENT_PATH = "/var/lib/coworkingbot/content.json"
-ALLOWED_FIELDS = {"welcome", "rules", "support", "announcement"}
+ALLOWED_FIELDS = {
+    "welcome",
+    "rules",
+    "support",
+    "announcement",
+    "booking_button_label",
+    "booking_success",
+    "booking_cancel_reschedule",
+}
 
 
 @dataclass(frozen=True)
@@ -23,6 +31,16 @@ class ClientContent:
     rules: str
     support: str
     announcement: str = ""
+    booking_button_label: str = "📅 Забронировать"
+    booking_success: str = (
+        "Готово ✅\nБронь создана.\n\n"
+        "📅 {date}\n🕐 {time}\n👤 {name}\n📞 {phone}\n\n"
+        "📋 ID брони: <code>{record_id}</code>\n\n"
+        "Дальше вы можете посмотреть детали в «Мои брони»."
+    )
+    booking_cancel_reschedule: str = (
+        "✅ Бронь отменена.\nВы можете выбрать новую дату или остаться в меню."
+    )
 
 
 _cache: dict[str, tuple[float, ClientContent]] = {}
@@ -67,11 +85,18 @@ def _write_raw(path: Path, payload: dict) -> None:
 
 def _build_content(raw: dict) -> ClientContent:
     defaults = _default_content()
+    # UX note: we keep non-empty fallbacks in code, so accidental admin cleanup
+    # never leaves clients with blank buttons/system texts.
     return ClientContent(
         welcome=str(raw.get("welcome") or defaults.welcome),
         rules=str(raw.get("rules") or defaults.rules),
         support=str(raw.get("support") or defaults.support),
         announcement=str(raw.get("announcement") or ""),
+        booking_button_label=str(raw.get("booking_button_label") or defaults.booking_button_label),
+        booking_success=str(raw.get("booking_success") or defaults.booking_success),
+        booking_cancel_reschedule=str(
+            raw.get("booking_cancel_reschedule") or defaults.booking_cancel_reschedule
+        ),
     )
 
 
