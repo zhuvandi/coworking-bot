@@ -8,12 +8,31 @@ from coworkingbot.services.common import now
 logger = logging.getLogger(__name__)
 
 
-async def send_admin_notification(ctx: AppContext, text: str) -> None:
+async def _send_message(ctx: AppContext, chat_id: int, text: str) -> None:
+    try:
+        await ctx.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+    except Exception as exc:
+        logger.error("Failed to notify chat %s: %s", chat_id, exc)
+
+
+async def send_admin_alert(ctx: AppContext, text: str) -> None:
+    if ctx.settings.admin_alerts_chat_id is not None:
+        await _send_message(ctx, ctx.settings.admin_alerts_chat_id, text)
+        return
     for admin_id in ctx.settings.admin_ids:
-        try:
-            await ctx.bot.send_message(chat_id=int(admin_id), text=text, parse_mode="HTML")
-        except Exception as exc:
-            logger.error("Failed to notify admin %s: %s", admin_id, exc)
+        await _send_message(ctx, int(admin_id), text)
+
+
+async def send_admin_action_required(ctx: AppContext, text: str) -> None:
+    if not ctx.settings.admin_ids:
+        logger.warning("No admin IDs configured for action-required message.")
+        return
+    for admin_id in ctx.settings.admin_ids:
+        await _send_message(ctx, int(admin_id), text)
+
+
+async def send_admin_notification(ctx: AppContext, text: str) -> None:
+    await send_admin_alert(ctx, text)
 
 
 async def notify_admin_about_error(ctx: AppContext, error_message: str, context: str = "") -> None:
@@ -23,7 +42,7 @@ async def notify_admin_about_error(ctx: AppContext, error_message: str, context:
         f"📝 Контекст: {context}\n"
         f"💥 Ошибка: {error_message[:500]}"
     )
-    await send_admin_notification(ctx, message_text)
+    await send_admin_alert(ctx, message_text)
 
 
 async def notify_admin_about_cancellation(
@@ -39,7 +58,7 @@ async def notify_admin_about_cancellation(
         f"📋 ID записи: <code>{record_id}</code>\n"
         f"💰 Стоимость: {booking_data.get('price', 0)} руб."
     )
-    await send_admin_notification(ctx, message_text)
+    await send_admin_alert(ctx, message_text)
 
 
 async def notify_admin_about_payment_confirmation(
@@ -53,13 +72,14 @@ async def notify_admin_about_payment_confirmation(
         f"⏰ Время: {now(ctx).strftime('%H:%M %d.%m.%Y')}"
     )
 
+    if ctx.settings.admin_alerts_chat_id is not None:
+        await _send_message(ctx, ctx.settings.admin_alerts_chat_id, message_text)
+        return
+
     for admin in ctx.settings.admin_ids:
         if int(admin) == admin_id:
             continue
-        try:
-            await ctx.bot.send_message(chat_id=int(admin), text=message_text, parse_mode="HTML")
-        except Exception as exc:
-            logger.error("Failed to notify admin %s: %s", admin, exc)
+        await _send_message(ctx, int(admin), message_text)
 
 
 async def notify_admin_about_new_booking(
@@ -75,7 +95,7 @@ async def notify_admin_about_new_booking(
         f"📋 ID записи: <code>{record_id}</code>"
     )
 
-    await send_admin_notification(ctx, message_text)
+    await send_admin_alert(ctx, message_text)
 
 
 async def notify_admin_about_new_review(
@@ -89,4 +109,4 @@ async def notify_admin_about_new_review(
         f"⭐ Оценка: {rating}/5\n"
         f"💬 Отзыв: {review_text[:200] if review_text else 'Без текста'}..."
     )
-    await send_admin_notification(ctx, message_text)
+    await send_admin_alert(ctx, message_text)

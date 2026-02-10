@@ -24,6 +24,7 @@ class Settings:
     gas_webapp_url: str
     api_token: str
     admin_ids: tuple[int, ...]
+    admin_alerts_chat_id: int | None
     tz_name: str
 
 
@@ -50,12 +51,26 @@ def _parse_admin_ids(raw: str | None) -> tuple[int, ...]:
     return tuple(ids)
 
 
+def _parse_alerts_chat_id(raw: str | None) -> int | None:
+    if not raw:
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        logger.warning("Invalid alerts chat id %s (skipped)", value)
+        return None
+
+
 def load_settings() -> Settings:
     return Settings(
         bot_token=os.environ.get("BOT_TOKEN", "").strip(),
         gas_webapp_url=os.environ.get("GAS_WEBAPP_URL", "").strip(),
         api_token=os.environ.get("API_TOKEN", "").strip(),
         admin_ids=_parse_admin_ids(os.environ.get("ADMIN_IDS")),
+        admin_alerts_chat_id=_parse_alerts_chat_id(os.environ.get("ADMIN_ALERTS_CHAT_ID")),
         tz_name=os.environ.get("TZ", "Europe/Moscow").strip(),
     )
 

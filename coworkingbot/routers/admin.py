@@ -13,6 +13,12 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from coworkingbot import __version__
 from coworkingbot.app.context import AppContext
 from coworkingbot.services.common import is_admin, now
+from coworkingbot.services.content_store import (
+    ALLOWED_FIELDS,
+    get_client_content,
+    reset_client_content,
+    set_client_content_field,
+)
 from coworkingbot.services.notifications import (
     notify_admin_about_payment_confirmation,
     send_admin_notification,
@@ -34,27 +40,93 @@ class AdminStates(StatesGroup):
     waiting_user_ban = State()
     waiting_user_unban = State()
     confirming_action = State()
+    waiting_client_content_value = State()
+    confirming_client_content_save = State()
+    confirming_client_content_reset = State()
 
 
 def admin_panel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(text="📊 Сводка", callback_data="admin_summary"),
-                InlineKeyboardButton(text="⛔️ Исключения", callback_data="admin_exceptions"),
-            ],
-            [
-                InlineKeyboardButton(text="🧩 Настройки", callback_data="admin_settings"),
-                InlineKeyboardButton(text="👤 Пользователи", callback_data="admin_users"),
-            ],
-            [
-                InlineKeyboardButton(text="🧪 Диагностика", callback_data="admin_diagnostics"),
-                InlineKeyboardButton(text="❓ Помощь", callback_data="admin_help"),
-            ],
+            [InlineKeyboardButton(text="🛠 Управление", callback_data="admin_hub_manage")],
+            [InlineKeyboardButton(text="👁 Просмотр", callback_data="admin_hub_view")],
+            [InlineKeyboardButton(text="⚙️ Система", callback_data="admin_hub_system")],
             [InlineKeyboardButton(text="🚪 Выйти", callback_data="main_menu")],
         ]
     )
 
+
+def admin_manage_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Подтвердить оплату", callback_data="admin_confirm_payment_help"
+                )
+            ],
+            [InlineKeyboardButton(text="⛔️ Исключения", callback_data="admin_exceptions")],
+            [InlineKeyboardButton(text="👤 Пользователи", callback_data="admin_users")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
+        ]
+    )
+
+
+def admin_view_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📊 Сводка", callback_data="admin_summary")],
+            [
+                InlineKeyboardButton(text="📅 Сегодня", callback_data="admin_view_today"),
+                InlineKeyboardButton(text="📅 Завтра", callback_data="admin_view_tomorrow"),
+            ],
+            [InlineKeyboardButton(text="⭐ Отзывы", callback_data="admin_all_reviews")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
+        ]
+    )
+
+
+def admin_system_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🧩 Настройки", callback_data="admin_settings")],
+            [InlineKeyboardButton(text="🧪 Диагностика", callback_data="admin_diagnostics")],
+            [InlineKeyboardButton(text="📝 Контент для клиента", callback_data="admin_client_content")],
+            [InlineKeyboardButton(text="❓ Помощь", callback_data="admin_help")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")],
+        ]
+    )
+
+
+
+
+def admin_client_content_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✏️ Приветствие", callback_data="admin_content_edit:welcome")],
+            [InlineKeyboardButton(text="✏️ Условия", callback_data="admin_content_edit:rules")],
+            [InlineKeyboardButton(text="✏️ Поддержка", callback_data="admin_content_edit:support")],
+            [InlineKeyboardButton(text="✏️ Объявление", callback_data="admin_content_edit:announcement")],
+            [InlineKeyboardButton(text="🔄 Сбросить к дефолту", callback_data="admin_content_reset")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="admin_hub_system")],
+        ]
+    )
+
+
+def _content_field_label(field: str) -> str:
+    mapping = {
+        "welcome": "Приветствие",
+        "rules": "Условия",
+        "support": "Поддержка",
+        "announcement": "Объявление",
+    }
+    return mapping.get(field, field)
+
+
+def _trim_preview(text: str, limit: int = 800) -> str:
+    cleaned = text.strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return f"{cleaned[:limit]}..."
 
 async def get_stats_from_gas(ctx: AppContext) -> dict:
     result = await ctx.gas.request("get_stats", {})
@@ -100,6 +172,189 @@ async def cmd_admin(message: types.Message, ctx: AppContext) -> None:
         reply_markup=admin_panel_keyboard(),
     )
 
+
+@router.callback_query(F.data == "admin_hub_manage")
+async def action_admin_hub_manage(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "🛠 <b>Управление</b>\n\nОперационные действия:",
+        parse_mode="HTML",
+        reply_markup=admin_manage_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_hub_view")
+async def action_admin_hub_view(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "👁 <b>Просмотр</b>\n\nДанные без изменений:",
+        parse_mode="HTML",
+        reply_markup=admin_view_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_hub_system")
+async def action_admin_hub_system(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "⚙️ <b>Система</b>\n\nСервисные функции:",
+        parse_mode="HTML",
+        reply_markup=admin_system_keyboard(),
+    )
+    await callback.answer()
+
+
+
+
+@router.callback_query(F.data == "admin_client_content")
+async def action_admin_client_content(callback: types.CallbackQuery, ctx: AppContext) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    content = await get_client_content(ctx)
+    text = (
+        "📝 <b>Контент для клиента</b>\n\n"
+        f"Приветствие: {len(content.welcome.strip())} символов\n"
+        f"Условия: {len(content.rules.strip())} символов\n"
+        f"Поддержка: {len(content.support.strip())} символов\n"
+        f"Объявление: {len(content.announcement.strip())} символов"
+    )
+    await callback.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=admin_client_content_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_content_edit:"))
+async def action_admin_content_edit(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    field = callback.data.split(":", maxsplit=1)[-1]
+    if field not in ALLOWED_FIELDS:
+        await callback.answer("Неизвестное поле", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.waiting_client_content_value)
+    await state.update_data(content_field=field)
+    await callback.message.answer(
+        f"Отправьте новый текст для поля «{_content_field_label(field)}» одним сообщением."
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.waiting_client_content_value)
+async def handle_admin_content_value(message: types.Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer("❌ Текст не может быть пустым. Отправьте значение ещё раз.")
+        return
+
+    data = await state.get_data()
+    field = data.get("content_field", "")
+    await state.set_state(AdminStates.confirming_client_content_save)
+    await state.update_data(content_value=text)
+
+    preview = _trim_preview(text)
+    await message.answer(
+        "🔍 <b>Превью</b>\n\n"
+        f"Поле: {_content_field_label(field)}\n"
+        f"{preview}",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Сохранить", callback_data="admin_content_save")],
+                [InlineKeyboardButton(text="↩️ Отмена", callback_data="admin_content_cancel")],
+            ]
+        ),
+    )
+
+
+@router.callback_query(F.data == "admin_content_cancel")
+async def action_admin_content_cancel(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await state.clear()
+    await action_admin_client_content(callback, ctx)
+
+
+@router.callback_query(F.data == "admin_content_save")
+async def action_admin_content_save(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    data = await state.get_data()
+    field = data.get("content_field", "")
+    value = data.get("content_value", "")
+    if field not in ALLOWED_FIELDS or not value:
+        await callback.answer("Нет данных для сохранения", show_alert=True)
+        return
+
+    await set_client_content_field(ctx, field, value)
+    await state.clear()
+    await action_admin_client_content(callback, ctx)
+
+
+@router.callback_query(F.data == "admin_content_reset")
+async def action_admin_content_reset(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.confirming_client_content_reset)
+    await callback.message.edit_text(
+        "⚠️ Сбросить весь клиентский контент к значениям по умолчанию?",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="✅ Да, сбросить", callback_data="admin_content_reset_confirm"
+                    ),
+                    InlineKeyboardButton(text="↩️ Отмена", callback_data="admin_content_cancel"),
+                ]
+            ]
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_content_reset_confirm")
+async def action_admin_content_reset_confirm(
+    callback: types.CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await reset_client_content(ctx)
+    await state.clear()
+    await action_admin_client_content(callback, ctx)
 
 async def _run_self_check(ctx: AppContext) -> tuple[str, bool]:
     from coworkingbot.app.context import validate_settings
@@ -292,6 +547,27 @@ async def action_admin_back(
         "👑 <b>Админ-панель</b>\n\nВыберите действие:",
         parse_mode="HTML",
         reply_markup=admin_panel_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_confirm_payment_help")
+async def action_admin_confirm_payment_help(
+    callback: types.CallbackQuery, ctx: AppContext
+) -> None:
+    if not is_admin(ctx, callback.from_user.id):
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "✅ <b>Подтверждение оплаты</b>\n\n"
+        "Используйте команду:\n"
+        "<code>/confirm ID_записи</code>\n\n"
+        "ID можно взять из списка броней.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="↩️ Назад", callback_data="admin_back")]]
+        ),
     )
     await callback.answer()
 
